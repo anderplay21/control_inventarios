@@ -3,14 +3,15 @@
  * empresa. Las más urgentes y las que ya están en curso van primero.
  */
 import { useMemo, useState } from 'react'
-import { View } from 'react-native'
+import { ScrollView, View } from 'react-native'
 import { router } from 'expo-router'
 import { ClipboardList, LogOut, RefreshCw, Wrench } from 'lucide-react-native'
 import { ESTADO_OT, PRIORIDAD_OT, type EstadoOT, type PrioridadOT } from '@compartido/index'
 import {
-  Avatar, Boton, BotonIcono, Chip, ESPACIO, Esqueleto, EstadoVacio, Fila, HojaInferior, Pantalla, Segmentado, Tarjeta,
+  Aparecer, Avatar, Boton, Chip, ESPACIO, Esqueleto, EstadoVacio, Fila, HojaInferior, Segmentado, Tarjeta,
   Texto, useTema,
 } from '@/diseno'
+import { BotonCabecera, CabeceraLite, CifraCabecera, fechaDeHoy } from '@/lite/marca'
 import { useSesion } from '@/datos/sesion'
 import { TONO_ESTADO, esMia, nombreActivo, useOrdenesAbiertas } from '@/datos/ordenes'
 import { VERSION_APP } from '@/datos/config'
@@ -33,22 +34,25 @@ export default function Ordenes() {
   const nombre = usuario ? `${usuario.nombre} ${usuario.apellido}`.trim() : ''
 
   return (
-    <Pantalla subtitulo={nombreEmpresa ?? undefined} titulo={`${saludo()}, ${usuario?.nombre ?? ''}`}
-      accion={<View style={{ flexDirection: 'row', gap: ESPACIO.e2 }}>
-        <BotonIcono icono={RefreshCw} etiqueta="Actualizar" onPress={recargar} />
-        <Avatar nombre={nombre || 'Usuario'} tamano={48} onPress={() => setPerfil(true)} />
-      </View>}>
-
-      <View style={{ flexDirection: 'row', gap: ESPACIO.e3 }}>
-        <Tarjeta style={{ flex: 1, gap: 4 }}>
-          <Texto variante="nota" tono="secundario">Asignadas a usted</Texto>
-          <Texto variante="cifra">{ordenes ? mias.length : '—'}</Texto>
-        </Tarjeta>
-        <Tarjeta style={{ flex: 1, gap: 4 }}>
-          <Texto variante="nota" tono="secundario">En curso</Texto>
-          <Texto variante="cifra" style={{ color: enCurso ? color.exito : color.texto }}>{ordenes ? enCurso : '—'}</Texto>
-        </Tarjeta>
-      </View>
+    <View style={{ flex: 1, backgroundColor: color.fondo }}>
+      <CabeceraLite titulo="TittanWare" subtitulo={nombreEmpresa ?? undefined}
+        accion={<View style={{ flexDirection: 'row', gap: ESPACIO.e2, alignItems: 'center' }}>
+          <BotonCabecera icono={RefreshCw} etiqueta="Actualizar" onPress={recargar} />
+          <Avatar nombre={nombre || 'Usuario'} tamano={42} onPress={() => setPerfil(true)} />
+        </View>}>
+        <View style={{ gap: 2 }}>
+          <Texto variante="titulo" lineas={1} accessibilityRole="header" style={{ color: color.sobreMarca }}>{saludo()}{usuario?.nombre ? `, ${usuario.nombre}` : ''}</Texto>
+          <Texto variante="nota" style={{ color: color.sobreMarcaSuave }}>
+            {fechaDeHoy()}
+          </Texto>
+        </View>
+        <View style={{ flexDirection: 'row', gap: ESPACIO.e2 }}>
+          <CifraCabecera valor={ordenes ? mias.length : '—'} rotulo="Asignadas" />
+          <CifraCabecera valor={ordenes ? enCurso : '—'} rotulo="En curso" tono={enCurso ? 'exito' : undefined} />
+          <CifraCabecera valor={ordenes ? ordenes.length : '—'} rotulo="Abiertas" />
+        </View>
+      </CabeceraLite>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: ESPACIO.e4, gap: ESPACIO.e4, paddingBottom: ESPACIO.e10 }}>
 
       <Segmentado valor={vista} onCambio={setVista} opciones={[
         { valor: 'mias', texto: `Mías${ordenes ? ` · ${mias.length}` : ''}` },
@@ -74,6 +78,7 @@ export default function Ordenes() {
             accion={vista === 'mias' && ordenes.length ? 'Ver todas las abiertas' : undefined} onAccion={() => setVista('todas')} />
         </Tarjeta>
       ) : (
+        <Aparecer>
         <Tarjeta relleno={0} style={{ overflow: 'hidden', opacity: cargando ? 0.6 : 1 }}>
           {lista.map((o, i) => (
             <Fila key={o.id} titulo={o.descripcion} detalle={`${o.numero} · ${nombreActivo(activos[o.activo_id])}`}
@@ -83,7 +88,9 @@ export default function Ordenes() {
               derecha={<Chip texto={ESTADO_OT[o.estado as EstadoOT]?.corto ?? o.estado ?? ''} tono={TONO_ESTADO[o.estado ?? ''] ?? 'neutro'} />} />
           ))}
         </Tarjeta>
+        </Aparecer>
       )}
+      </ScrollView>
 
       <HojaInferior visible={perfil} onCerrar={() => setPerfil(false)} titulo={nombre}>
         <Texto tono="secundario">{usuario?.username} · {nombreEmpresa}</Texto>
@@ -91,6 +98,6 @@ export default function Ordenes() {
         <Boton titulo="Salir de este teléfono" variante="peligro" icono={LogOut} ancho tamano="grande"
           onPress={() => { setPerfil(false); salir() }} />
       </HojaInferior>
-    </Pantalla>
+    </View>
   )
 }

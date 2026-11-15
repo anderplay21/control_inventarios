@@ -5,7 +5,7 @@
 import { type ReactNode } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native'
 import * as Haptics from 'expo-haptics'
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated'
+import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated'
 import { ChevronRight, type LucideIcon } from 'lucide-react-native'
 import { useTema } from '../tema'
 import { ESPACIO, FUENTE, MOVIMIENTO, RADIO, TACTIL, TIPO, type NivelElevacion, type VarianteTipo } from '../tokens'
@@ -83,7 +83,9 @@ export function Tarjeta({ children, onPress, elevacion = 1, style, relleno = ESP
 }) {
   const t = useTema()
   const p = usePresion(0.985)
-  const base = [estilos.tarjeta, { backgroundColor: elevacion >= 2 && t.oscuro ? t.color.elevada : t.color.superficie, padding: relleno }, t.elevacion(elevacion), style]
+  // En claro, un filo fino además de la sombra: la tarjeta se recorta nítida al sol.
+  const base = [estilos.tarjeta, { backgroundColor: elevacion >= 2 && t.oscuro ? t.color.elevada : t.color.superficie, padding: relleno },
+    !t.oscuro && elevacion > 0 && { borderWidth: StyleSheet.hairlineWidth, borderColor: t.color.borde }, t.elevacion(elevacion), style]
   if (!onPress) return <View style={base}>{children}</View>
   return (
     <AnimadoPressable accessibilityRole="button" accessibilityLabel={etiqueta} onPressIn={p.onPressIn} onPressOut={p.onPressOut}
@@ -114,6 +116,46 @@ export function Fila({ titulo, detalle, icono: Icono, colorIcono, derecha, onPre
       </View>
     </Pressable>
   )
+}
+
+/**
+ * Un acceso grande: ícono en su ficha, título y una línea que dice para qué es.
+ * `destacado` lo pinta con el acento (la acción principal de la pantalla).
+ */
+export function Acceso({ titulo, detalle, icono: Icono, onPress, destacado, insignia }: {
+  titulo: string; detalle?: string; icono: LucideIcon; onPress: () => void; destacado?: boolean; insignia?: string
+}) {
+  const t = useTema()
+  const { color } = t
+  const p = usePresion(0.97)
+  const fg = destacado ? color.textoSobreAcento : color.texto
+  return (
+    <AnimadoPressable accessibilityRole="button" accessibilityLabel={detalle ? `${titulo}. ${detalle}` : titulo}
+      onPressIn={p.onPressIn} onPressOut={p.onPressOut} onPress={() => { Haptics.selectionAsync(); onPress() }}
+      style={[p.estilo, estilos.acceso, { backgroundColor: destacado ? color.acento : color.superficie },
+        !destacado && !t.oscuro && { borderWidth: StyleSheet.hairlineWidth, borderColor: color.borde }, t.elevacion(destacado ? 2 : 1)]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={[estilos.accesoIcono, { backgroundColor: destacado ? color.cristal : color.acentoSuave }]}>
+          <Icono size={22} color={destacado ? color.textoSobreAcento : color.acentoSobreSuave} strokeWidth={2.1} />
+        </View>
+        {insignia
+          ? <View style={[estilos.insignia, { backgroundColor: destacado ? color.cristal : color.hundida }]}>
+              <Text style={[TIPO.mini, { color: destacado ? color.textoSobreAcento : color.textoSecundario, letterSpacing: 0.2 }]}>{insignia}</Text>
+            </View>
+          : <ChevronRight size={18} color={destacado ? color.textoSobreAcento : color.textoTerciario} />}
+      </View>
+      <View style={{ gap: 2 }}>
+        <Text numberOfLines={1} maxFontSizeMultiplier={1.4} style={[TIPO.cuerpoFuerte, { color: fg, fontSize: 16 }]}>{titulo}</Text>
+        {detalle && <Text numberOfLines={2} maxFontSizeMultiplier={1.4}
+          style={[TIPO.nota, { color: destacado ? color.textoSobreAcento : color.textoSecundario, opacity: destacado ? 0.86 : 1 }]}>{detalle}</Text>}
+      </View>
+    </AnimadoPressable>
+  )
+}
+
+/** Hace entrar su contenido subiendo y apareciendo; `orden` escalona varias piezas. */
+export function Aparecer({ orden = 0, children, style }: { orden?: number; children: ReactNode; style?: StyleProp<ViewStyle> }) {
+  return <Animated.View entering={FadeInDown.delay(40 + orden * 55).duration(MOVIMIENTO.lento)} style={style}>{children}</Animated.View>
 }
 
 export type TonoChip = 'neutro' | 'acento' | 'exito' | 'alerta' | 'peligro' | 'moderada'
@@ -163,6 +205,9 @@ const estilos = StyleSheet.create({
   filaIcono: { width: 38, height: 38, borderRadius: RADIO.medio, alignItems: 'center', justifyContent: 'center' },
   filaCuerpo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: ESPACIO.e2, paddingVertical: ESPACIO.e3, paddingRight: ESPACIO.e4, minHeight: 60 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, height: 26, borderRadius: RADIO.total, alignSelf: 'flex-start' },
+  acceso: { flex: 1, borderRadius: RADIO.xl, padding: ESPACIO.e4, gap: ESPACIO.e3, minHeight: 124, justifyContent: 'space-between' },
+  accesoIcono: { width: 44, height: 44, borderRadius: RADIO.grande, alignItems: 'center', justifyContent: 'center' },
+  insignia: { paddingHorizontal: 8, height: 22, borderRadius: RADIO.total, alignItems: 'center', justifyContent: 'center' },
   punto: { width: 6, height: 6, borderRadius: 3 },
   seccionCab: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: ESPACIO.e1 },
 })

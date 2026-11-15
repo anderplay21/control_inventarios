@@ -28,12 +28,12 @@ export function ProveedorTema({ children, inicial = 'sistema' }: { children: Rea
     const elevacion = (nivel: NivelElevacion): ViewStyle => {
       if (nivel === 0) return {}
       if (oscuro) return { borderWidth: 1, borderColor: color.borde }
-      const y = [0, 1, 4, 10][nivel]
-      const r = [0, 3, 12, 24][nivel]
-      const o = [0, 0.06, 0.08, 0.12][nivel]
+      const y = [0, 2, 6, 14][nivel]
+      const r = [0, 8, 18, 34][nivel]
+      const o = [0, 0.05, 0.08, 0.13][nivel]
       return Platform.select<ViewStyle>({
         web: { boxShadow: `0px ${y}px ${r}px rgba(14,16,19,${o})` } as ViewStyle,
-        default: { shadowColor: color.sombra, shadowOpacity: o * 1.6, shadowRadius: r / 2, shadowOffset: { width: 0, height: y }, elevation: nivel * 2 },
+        default: { shadowColor: color.sombra, shadowOpacity: o * 1.6, shadowRadius: r / 2, shadowOffset: { width: 0, height: y }, elevation: [0, 2, 5, 10][nivel] },
       })!
     }
     return { color, oscuro, preferencia, setPreferencia, elevacion }

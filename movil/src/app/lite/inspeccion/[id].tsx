@@ -12,10 +12,11 @@
 import { useMemo, useRef, useState, type ComponentRef } from 'react'
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router'
-import { Bluetooth, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Play, Save } from 'lucide-react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { Bluetooth, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Gauge, Play, Save } from 'lucide-react-native'
 import {
-  Boton, Campo, CampoNumerico, Chip, ESPACIO, EsquemaVehiculo, EstadoVacio, Fila, Interruptor, RADIO, Segmentado,
-  Tarjeta, Texto, useTema, type PosicionLlanta,
+  Aparecer, Boton, Campo, CampoNumerico, Chip, ESPACIO, EsquemaVehiculo, EstadoVacio, Fila, Interruptor, Progreso, RADIO, Segmentado,
+  SIN_CONTORNO, Tarjeta, Texto, useTema, type PosicionLlanta,
 } from '@/diseno'
 import { useSesion } from '@/datos/sesion'
 import {
@@ -52,16 +53,25 @@ function Surco({ nombre, valor, antes, onCambio, refInput, onSiguiente, activo }
   const { color } = useTema()
   const [texto, setTexto] = useState(valor == null ? '' : String(valor))
   const [ultimo, setUltimo] = useState(valor)
+  const [foco, setFoco] = useState(false)
   if (valor !== ultimo) { setUltimo(valor); setTexto(valor == null ? '' : String(valor)) }
+  const encendido = activo || foco
+  // La profundidad no sube: si lo escrito supera lo anterior, se avisa aquí mismo.
+  const sube = valor != null && antes != null && valor > antes + 0.5
   return (
     <View style={{ flex: 1, gap: 4 }}>
-      <Texto variante="mini" tono={activo ? 'acento' : 'secundario'}>{nombre.toUpperCase()}</Texto>
+      <Texto variante="mini" tono={encendido ? 'acento' : 'secundario'} style={{ textAlign: 'center' }}>{nombre.toUpperCase()}</Texto>
       <TextInput ref={refInput} value={texto} keyboardType="decimal-pad" returnKeyType="next" blurOnSubmit={false}
-        accessibilityLabel={`Surco ${nombre}, milímetros`} selectTextOnFocus
+        accessibilityLabel={`Surco ${nombre}, milímetros`} selectTextOnFocus placeholder="—" placeholderTextColor={color.bordeFuerte}
         onChangeText={t => { setTexto(t); onCambio(num(t)) }} onSubmitEditing={onSiguiente}
-        style={{ minHeight: 64, borderRadius: RADIO.grande, borderWidth: 2, borderColor: activo ? color.acento : color.borde,
-          backgroundColor: color.superficie, color: color.texto, fontSize: 28, fontFamily: 'Inter_800ExtraBold', textAlign: 'center' }} />
-      <Texto variante="nota" tono="terciario" style={{ textAlign: 'center' }}>{antes != null ? `antes ${antes}` : ' '}</Texto>
+        onFocus={() => setFoco(true)} onBlur={() => setFoco(false)}
+        style={[{ minHeight: 68, borderRadius: RADIO.grande, borderWidth: 2,
+          borderColor: sube ? color.alerta : encendido ? color.acento : valor != null ? color.bordeFuerte : color.borde,
+          backgroundColor: sube ? color.alertaSuave : encendido ? color.acentoSuave : color.superficie,
+          color: color.texto, fontSize: 28, fontFamily: 'Inter_800ExtraBold', textAlign: 'center' }, SIN_CONTORNO]} />
+      <Texto variante="nota" tono={sube ? 'alerta' : 'terciario'} style={{ textAlign: 'center' }}>
+        {antes != null ? `${sube ? 'sube · ' : ''}antes ${antes}` : ' '}
+      </Texto>
     </View>
   )
 }
@@ -72,7 +82,8 @@ export default function InspeccionLite() {
   const { vehiculos, catalogos } = useDatosLite()
   const { agregar } = useCola()
   const { pref, cambiar: cambiarPref, memoria, recordar } = usePreferencias()
-  const { color } = useTema()
+  const { color, elevacion } = useTema()
+  const borde = useSafeAreaInsets()
   const vehiculo = useMemo(() => vehiculos?.find(v => String(v.activo_id) === String(id)), [vehiculos, id])
   const [etapa, setEtapa] = useState<'inicio' | 'llantas' | 'resumen'>('inicio')
   const [fechaModo, setFechaModo] = useState<'hoy' | 'ayer' | 'otra'>('hoy')
@@ -177,14 +188,16 @@ export default function InspeccionLite() {
         <CabeceraLite titulo={vehiculo.placa || vehiculo.codigo} subtitulo={[vehiculo.tipo, vehiculo.marca, vehiculo.linea].filter(Boolean).join(' · ')}
           volver={() => router.back()} />
         <ScrollView contentContainerStyle={{ padding: ESPACIO.e4, gap: ESPACIO.e4 }} keyboardShouldPersistTaps="handled">
+          <Aparecer>
           <Tarjeta style={{ gap: ESPACIO.e3 }}>
             <Texto variante="subtitulo">Última inspección</Texto>
             {previa ? (
               <>
-                <Texto tono="secundario">
-                  {new Date(previa.fecha).toLocaleDateString('es-CO', { dateStyle: 'medium' })}
-                  {previa.odometro ? ` · ${Math.round(previa.odometro).toLocaleString('es-CO')} km` : ''}{previa.inspector ? ` · ${previa.inspector}` : ''}
-                </Texto>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: ESPACIO.e2 }}>
+                  <Chip punto={false} texto={new Date(previa.fecha).toLocaleDateString('es-CO', { dateStyle: 'medium' })} tono="acento" />
+                  {!!previa.odometro && <Chip punto={false} texto={`${Math.round(previa.odometro).toLocaleString('es-CO')} km`} />}
+                  {!!previa.inspector && <Chip punto={false} texto={previa.inspector} />}
+                </View>
                 <EsquemaVehiculo profundidades ejes={esquema(p => minimo(previa.llantas?.[p.codigo]),
                   p => (previa.llantas?.[p.codigo]?.novedades ?? []).includes('SIN_LLANTA'))} />
                 <Texto variante="nota" tono="terciario">El color es el estado por la profundidad mínima de entonces.</Texto>
@@ -213,18 +226,24 @@ export default function InspeccionLite() {
               </>
             ) : <Texto tono="secundario">Este vehículo no tiene inspecciones en TittanLite todavía.</Texto>}
           </Tarjeta>
-          <Tarjeta style={{ gap: ESPACIO.e3 }}>
+          </Aparecer>
+          <Aparecer orden={1}>
+          <Tarjeta elevacion={2} style={{ gap: ESPACIO.e3 }}>
             <Texto variante="subtitulo">Nueva inspección</Texto>
-            <Texto variante="nota" tono="secundario">Fecha</Texto>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <CalendarDays size={15} color={color.textoSecundario} />
+              <Texto variante="nota" tono="secundario">Fecha</Texto>
+            </View>
             <Segmentado opciones={[{ valor: 'hoy', texto: 'Hoy' }, { valor: 'ayer', texto: 'Ayer' }, { valor: 'otra', texto: 'Otra' }]}
               valor={fechaModo} onCambio={v => setFechaModo(v as typeof fechaModo)} />
             {fechaModo === 'otra' && <Campo etiqueta="Fecha (AAAA-MM-DD)" valor={fechaOtra} onCambio={setFechaOtra} teclado="numbers-and-punctuation" />}
-            <Campo etiqueta="Odómetro (km)" valor={odometro} onCambio={setOdometro} teclado="numeric"
+            <Campo etiqueta="Odómetro (km)" valor={odometro} onCambio={setOdometro} teclado="numeric" icono={Gauge}
               ayuda={previa?.odometro ? `Anterior: ${Math.round(previa.odometro).toLocaleString('es-CO')} km` :
                 vehiculo.odometro_actual ? `En TittanWare: ${Math.round(vehiculo.odometro_actual).toLocaleString('es-CO')} km` : undefined} />
             <Boton titulo="Iniciar inspección" icono={Play} tamano="grande" ancho deshabilitado={!/^\d{4}-\d{2}-\d{2}$/.test(fecha)}
               onPress={() => { setEtapa('llantas'); ir(0) }} />
           </Tarjeta>
+          </Aparecer>
         </ScrollView>
       </View>
     )
@@ -364,23 +383,28 @@ export default function InspeccionLite() {
             </>
           )}
         </Tarjeta>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: ESPACIO.e2 }}>
+        <Progreso valor={orden.length ? inspeccionadas.length / orden.length : 0} />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: ESPACIO.e2, paddingVertical: 2 }}>
           {orden.map((p, i) => {
             const l = llantas[p.codigo]
             const hecho = !!l && (minimo(l) != null || l.novedades.length > 0)
+            const aqui = i === indice
             return (
-              <Pressable key={p.codigo} accessibilityRole="button" accessibilityLabel={`Ir a ${p.label}`} onPress={() => ir(i)}
-                style={{ minWidth: 44, height: 36, paddingHorizontal: 10, borderRadius: RADIO.total, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: i === indice ? color.acento : hecho ? color.exitoSuave : color.hundida }}>
-                <Texto variante="nota" style={{ color: i === indice ? color.textoSobreAcento : hecho ? color.exito : color.textoSecundario }}>{i + 1}</Texto>
+              <Pressable key={p.codigo} accessibilityRole="button" accessibilityLabel={`Ir a ${p.label}${hecho ? ', medida' : ''}`} onPress={() => ir(i)}
+                style={{ minWidth: 46, height: 38, paddingHorizontal: 12, borderRadius: RADIO.total, alignItems: 'center', justifyContent: 'center',
+                  flexDirection: 'row', gap: 4, backgroundColor: aqui ? color.acento : hecho ? color.exitoSuave : color.superficie,
+                  borderWidth: 1, borderColor: aqui ? color.acento : hecho ? color.exitoSuave : color.borde }}>
+                {hecho && !aqui && <Check size={13} color={color.exito} strokeWidth={3} />}
+                <Texto variante="nota" style={{ color: aqui ? color.textoSobreAcento : hecho ? color.exito : color.textoSecundario }}>{i + 1}</Texto>
               </Pressable>
             )
           })}
         </ScrollView>
         {pref.pasos.map(bloque)}
       </ScrollView>
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', gap: ESPACIO.e3, padding: ESPACIO.e4,
-        paddingBottom: ESPACIO.e6, backgroundColor: color.superficie, borderTopWidth: 1, borderTopColor: color.borde }}>
+      <View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', gap: ESPACIO.e3, padding: ESPACIO.e4,
+        paddingBottom: Math.max(borde.bottom, ESPACIO.e2) + ESPACIO.e3, backgroundColor: color.superficie,
+        borderTopLeftRadius: RADIO.xl, borderTopRightRadius: RADIO.xl }, elevacion(3)]}>
         <View style={{ flex: 1 }}>
           <Boton titulo="Anterior" icono={ChevronLeft} variante="secundario" ancho deshabilitado={indice === 0} onPress={() => ir(indice - 1)} />
         </View>

@@ -15,6 +15,9 @@ interface KPICardProps {
   onClick?: () => void
 }
 
+/** La tarjeta cuando mide menos de 200 px de ancho. */
+const ANGOSTA = '@container (max-width: 200px)'
+
 export function KPICard({
   title, value, subtitle, icon,
   color = COLOR_MODULO, progress, trend, onClick,
@@ -36,6 +39,10 @@ export function KPICard({
           cursor: onClick ? 'pointer' : 'default',
           position: 'relative',
           overflow: 'hidden',
+          // La tarjeta se mide a sí misma: cuando queda angosta (seis en fila con
+          // el menú abierto) encoge el ícono y el rótulo, en vez de dejar que una
+          // palabra larga —«DISPONIBLES»— se meta debajo del ícono.
+          containerType: 'inline-size',
           background: '#FFFFFF',
           borderRadius: '16px',
           border: '1px solid rgba(0,0,0,0.05)',
@@ -58,7 +65,8 @@ export function KPICard({
           pointerEvents: 'none',
         }} />
 
-        <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 }, position: 'relative' }}>
+        <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 }, position: 'relative',
+          [ANGOSTA]: { p: 2, '&:last-child': { pb: 2 } } }}>
           {/* Top row: label + icon */}
           <Box sx={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
@@ -73,6 +81,8 @@ export function KPICard({
               minWidth: 0,
               lineHeight: 1.35,
               hyphens: 'auto',
+              overflowWrap: 'anywhere',
+              [ANGOSTA]: { fontSize: 10.5, letterSpacing: '0.02em' },
             }}>
               {title}
             </Typography>
@@ -88,6 +98,7 @@ export function KPICard({
               boxShadow: `0 4px 12px ${alpha(color, 0.3)}`,
               flexShrink: 0,
               '& svg': { fontSize: 20 },
+              [ANGOSTA]: { width: 32, height: 32, borderRadius: '10px', '& svg': { fontSize: 17 } },
             }}>
               {icon}
             </Box>

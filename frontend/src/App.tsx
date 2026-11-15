@@ -12,6 +12,7 @@ import { cerrarEnServidor, authApi } from '@/api/auth'
 import { puedeVerCommandCenter, rutaInicial } from '@/components/layout/WorkspacePanel'
 import { clienteGuardado } from '@/api/cliente'
 import { Logotipo } from '@/components/Logotipo'
+import { MarcoCargando } from '@/components/layout/MarcoCargando'
 
 // Prefijo de ruta → clave de permiso. Las rutas no listadas aquí son de libre acceso.
 const ROUTE_PERM_MAP: Record<string, string> = {
@@ -416,7 +417,15 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Pantallas que no llevan el marco de la aplicación (ingreso, portales, lector).
+const SIN_MARCO = ['/login', '/empresa', '/reservar', '/portal', '/scanner-movil', '/app-movil', '/sin-acceso']
+
 function PageLoader() {
+  const { isAuthenticated } = useAuthStore()
+  const { pathname } = useLocation()
+  // Con la sesión abierta, el marco se queda y solo el contenido se dibuja:
+  // abrir un módulo ya no apaga la pantalla entera.
+  if (isAuthenticated && !SIN_MARCO.some(r => pathname.startsWith(r))) return <MarcoCargando />
   return (
     <Box sx={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',

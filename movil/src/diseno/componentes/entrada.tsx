@@ -3,7 +3,7 @@
  * pasos que se toca con guantes, control segmentado e interruptor.
  */
 import { useState } from 'react'
-import { Pressable, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from 'react-native'
+import { Platform, Pressable, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions, type TextStyle } from 'react-native'
 import * as Haptics from 'expo-haptics'
 import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated'
 import { Minus, Plus, type LucideIcon } from 'lucide-react-native'
@@ -11,25 +11,30 @@ import { useTema } from '../tema'
 import { ESPACIO, FUENTE, MOVIMIENTO, RADIO, TACTIL, TIPO } from '../tokens'
 import { Texto } from './base'
 
-export function Campo({ etiqueta, valor, onCambio, ayuda, error, icono: Icono, teclado, secreto, multilinea, placeholder, sinMayusculas, alEnviar }: {
+/** En la vista web el navegador dibuja su propio contorno de foco dentro del campo: el borde del campo ya lo indica. */
+export const SIN_CONTORNO = Platform.select({ web: { outlineStyle: 'none' } as unknown as TextStyle, default: {} }) as TextStyle
+
+export function Campo({ etiqueta, valor, onCambio, ayuda, error, icono: Icono, teclado, secreto, multilinea, placeholder, sinMayusculas, alEnviar, sinRotulo }: {
   etiqueta: string; valor: string; onCambio: (v: string) => void; ayuda?: string; error?: string | null
   icono?: LucideIcon; teclado?: KeyboardTypeOptions; secreto?: boolean; multilinea?: boolean; placeholder?: string
   /** Códigos y usuarios: sin mayúscula inicial ni autocorrección. */
   sinMayusculas?: boolean; alEnviar?: () => void
+  /** Buscadores: el rótulo va dentro, como texto de ayuda, y no encima. */
+  sinRotulo?: boolean
 }) {
   const { color } = useTema()
   const [foco, setFoco] = useState(false)
   const borde = error ? color.peligro : foco ? color.acento : color.borde
   return (
     <View style={{ gap: 6 }}>
-      <Texto variante="nota" tono="secundario">{etiqueta}</Texto>
+      {!sinRotulo && <Texto variante="nota" tono="secundario">{etiqueta}</Texto>}
       <View style={[estilos.campo, { borderColor: borde, backgroundColor: color.superficie, borderWidth: foco || error ? 1.6 : 1 },
         multilinea && { minHeight: 104, alignItems: 'flex-start', paddingTop: ESPACIO.e3 }]}>
         {Icono && <Icono size={19} color={foco ? color.acento : color.textoTerciario} />}
         <TextInput accessibilityLabel={etiqueta} value={valor} onChangeText={onCambio} keyboardType={teclado} secureTextEntry={secreto}
-          multiline={multilinea} placeholder={placeholder} autoCapitalize={sinMayusculas || secreto ? 'none' : 'sentences'}
+          multiline={multilinea} placeholder={placeholder ?? (sinRotulo ? etiqueta : undefined)} autoCapitalize={sinMayusculas || secreto ? 'none' : 'sentences'}
           autoCorrect={!(sinMayusculas || secreto)} onSubmitEditing={alEnviar} returnKeyType={alEnviar ? 'go' : undefined} placeholderTextColor={color.textoTerciario} onFocus={() => setFoco(true)}
-          onBlur={() => setFoco(false)} style={[TIPO.cuerpo, { flex: 1, color: color.texto, paddingVertical: 0 }]} />
+          onBlur={() => setFoco(false)} style={[TIPO.cuerpo, { flex: 1, color: color.texto, paddingVertical: 0 }, SIN_CONTORNO]} />
       </View>
       {(error || ayuda) && <Texto variante="nota" tono={error ? 'peligro' : 'terciario'}>{error ?? ayuda}</Texto>}
     </View>
@@ -65,7 +70,7 @@ export function CampoNumerico({ etiqueta, valor, onCambio, paso = 0.5, min = 0, 
           <TextInput accessibilityLabel={etiqueta} value={texto} keyboardType="decimal-pad" selectTextOnFocus
             onChangeText={t => { setTexto(t); const n = Number(t.replace(',', '.')); onCambio(t === '' || Number.isNaN(n) ? null : n) }}
             placeholder="—" placeholderTextColor={color.textoTerciario}
-            style={[TIPO.cifra, { color: fuera ? color.peligro : color.texto, textAlign: 'center', width: Math.max(2, texto.length) * 22 + 12, paddingVertical: 0 }]} />
+            style={[TIPO.cifra, { color: fuera ? color.peligro : color.texto, textAlign: 'center', width: Math.max(2, texto.length) * 22 + 12, paddingVertical: 0 }, SIN_CONTORNO]} />
           {unidad && <Text style={[TIPO.cuerpoFuerte, { color: color.textoTerciario }]}>{unidad}</Text>}
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel={`Sumar ${paso}`} onPress={() => mover(paso)} style={[estilos.paso, { backgroundColor: color.hundida }]}>
