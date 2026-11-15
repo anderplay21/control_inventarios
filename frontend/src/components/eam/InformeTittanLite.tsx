@@ -170,13 +170,48 @@ function Inspecciones({ desde, hasta }: { desde: string; hasta: string }) {
     },
     onError: (e: any) => toast.error(mensajeDeError(e)),
   })
+  // Reintenta todo lo que no está en TittanWare (inspecciones y disposiciones
+  // finales). El servidor trabaja por tandas cortas: se repite hasta que no falte.
+  const todas = useMutation({
+    mutationFn: async () => {
+      const suma = { revisadas: 0, sincronizadas: 0, rechazadas: 0, sin_seguimiento: 0 }
+      let corte: string | undefined, desde = 0
+      for (let vuelta = 0; vuelta < 200; vuelta++) {
+        const d = (await api.post(`${B}/sincronizar-pendientes`, null,
+          { params: { corte, desde_disposicion: desde }, timeout: 120_000 })).data
+        corte = d.corte; desde = d.desde_disposicion
+        for (const grupo of [d.inspecciones, d.disposiciones]) {
+          suma.revisadas += grupo.revisadas; suma.sincronizadas += grupo.sincronizadas
+          suma.rechazadas += grupo.rechazadas; suma.sin_seguimiento += grupo.sin_seguimiento
+        }
+        if (!d.faltan) break
+      }
+      return suma
+    },
+    onSuccess: d => {
+      if (!d.revisadas) toast.success('No había nada pendiente por sincronizar')
+      else toast.success(`${n(d.sincronizadas)} entraron a TittanWare · ${n(d.rechazadas)} rechazadas · ${n(d.sin_seguimiento)} sin llanta en TittanWare`, { duration: 8000 })
+      for (const k of ['lite-inspecciones', 'lite-inspeccion', 'lite-informe']) qc.invalidateQueries({ queryKey: [k] })
+    },
+    onError: (e: any) => toast.error(mensajeDeError(e)),
+  })
   return (
     <Card variant="outlined">
       <CardContent sx={{ pb: 0 }}>
-        <Typography fontWeight={700} fontSize={14}>Inspecciones de TittanLite</Typography>
-        <Typography fontSize={11.5} color="text.secondary">
-          Lo que no pasó las reglas de TittanWare queda solo en Lite con su motivo. Corrija el seguimiento y reintente.
-        </Typography>
+        <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} alignItems={{ sm: 'center' }}>
+          <Box sx={{ flex: 1 }}>
+            <Typography fontWeight={700} fontSize={14}>Inspecciones de TittanLite</Typography>
+            <Typography fontSize={11.5} color="text.secondary">
+              Entra a TittanWare lo que tiene igual o menor profundidad e igual o mayor odómetro; una disposición final,
+              solo si la llanta ya está desmontada. Lo demás queda en Lite con su motivo: corrija el seguimiento y reintente.
+            </Typography>
+          </Box>
+          <Button variant="outlined" size="small" startIcon={<Sync />} disabled={todas.isPending}
+            onClick={() => todas.mutate()} sx={{ textTransform: 'none', fontWeight: 700, whiteSpace: 'nowrap' }}>
+            {todas.isPending ? 'Sincronizando…' : 'Sincronizar pendientes'}
+          </Button>
+        </Stack>
+        {todas.isPending && <LinearProgress sx={{ mt: 1 }} />}
       </CardContent>
       <Box sx={{ overflowX: 'auto' }}>
         <Table size="small">
