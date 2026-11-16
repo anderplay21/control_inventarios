@@ -160,7 +160,8 @@
       "agsServicios": "Services",
       "agsEquipo": "Équipe",
       "catalogos": "Catalogues",
-      "terminalPlanta": "Terminal d'atelier"
+      "terminalPlanta": "Terminal d'atelier",
+      "facturaVenta": "Facture de vente"
     },
     "section": {
       "principal": "Principal",
@@ -226,7 +227,8 @@
       "contabilidad": "Comptabilité",
       "cuentas": "Comptes",
       "fiscal": "Fiscal",
-      "corporativo": "Corporatif"
+      "corporativo": "Corporatif",
+      "ingresos": "Revenus"
     },
     "ws": {
       "control": "Contrôle des Palettes",

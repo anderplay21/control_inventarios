@@ -164,6 +164,11 @@ PUC: List[Tuple[str, str, TipoCuenta, NaturalezaCuenta, bool]] = [
     ("513595", "Otros servicios", TipoCuenta.EGRESO, NaturalezaCuenta.DEBITO, True),
     ("5160", "DEPRECIACIONES", TipoCuenta.EGRESO, NaturalezaCuenta.DEBITO, False),
     ("516005", "Gasto por depreciación", TipoCuenta.EGRESO, NaturalezaCuenta.DEBITO, True),
+    # Castigo de cartera («Cerrar sin pago» en la factura de venta): el gasto va
+    # aquí y el control de lo castigado en 832510 / 860510 (confirmado por
+    # contabilidad el 2026-11-15). Se cambia desde las reglas contables.
+    ("5199", "PROVISIONES", TipoCuenta.EGRESO, NaturalezaCuenta.DEBITO, False),
+    ("519910", "Deudores (castigo de cartera)", TipoCuenta.EGRESO, NaturalezaCuenta.DEBITO, True),
     ("5305", "FINANCIEROS", TipoCuenta.EGRESO, NaturalezaCuenta.DEBITO, False),
     ("530505", "Gastos bancarios", TipoCuenta.EGRESO, NaturalezaCuenta.DEBITO, True),
     ("530520", "Intereses", TipoCuenta.EGRESO, NaturalezaCuenta.DEBITO, True),
@@ -181,6 +186,17 @@ PUC: List[Tuple[str, str, TipoCuenta, NaturalezaCuenta, bool]] = [
     ("617505", "Costo del servicio de transporte", TipoCuenta.EGRESO, NaturalezaCuenta.DEBITO, True),
     ("617510", "Combustibles y lubricantes", TipoCuenta.EGRESO, NaturalezaCuenta.DEBITO, True),
     ("617515", "Peajes", TipoCuenta.EGRESO, NaturalezaCuenta.DEBITO, True),
+    # ── 8. CUENTAS DE ORDEN DEUDORAS ──
+    # No entran al balance ni a resultados (los informes filtran por tipo): son
+    # el control de lo que salió de los libros, p. ej. la cartera castigada,
+    # que se sigue cobrando aunque ya no figure como activo.
+    ("8", "CUENTAS DE ORDEN DEUDORAS", TipoCuenta.ORDEN, NaturalezaCuenta.DEBITO, False),
+    ("83", "DEUDORAS DE CONTROL", TipoCuenta.ORDEN, NaturalezaCuenta.DEBITO, False),
+    ("8325", "ACTIVOS CASTIGADOS", TipoCuenta.ORDEN, NaturalezaCuenta.DEBITO, False),
+    ("832510", "Activos castigados – Deudores", TipoCuenta.ORDEN, NaturalezaCuenta.DEBITO, True),
+    ("86", "DEUDORAS DE CONTROL POR CONTRA (CR)", TipoCuenta.ORDEN, NaturalezaCuenta.CREDITO, False),
+    ("8605", "ACTIVOS CASTIGADOS (CR)", TipoCuenta.ORDEN, NaturalezaCuenta.CREDITO, False),
+    ("860510", "Activos castigados – Deudores (CR)", TipoCuenta.ORDEN, NaturalezaCuenta.CREDITO, True),
 ]
 
 
@@ -202,6 +218,15 @@ REGLAS: List[tuple] = [
     ("VENTA_NOTA_CREDITO", "cartera", "130505", "CREDITO"),
     ("VENTA_NOTA_CREDITO", "ingreso", "427500", "DEBITO"),
     ("VENTA_NOTA_CREDITO", "iva_generado", "240805", "DEBITO"),
+
+    ("VENTA_NOTA_DEBITO", "cartera", "130505", "DEBITO"),
+    ("VENTA_NOTA_DEBITO", "ingreso", "413500", "CREDITO"),
+    ("VENTA_NOTA_DEBITO", "iva_generado", "240805", "CREDITO"),
+
+    ("CASTIGO_CARTERA", "gasto_castigo", "519910", "DEBITO"),
+    ("CASTIGO_CARTERA", "cartera", "130505", "CREDITO"),
+    ("CASTIGO_CARTERA", "control_castigo", "832510", "DEBITO"),
+    ("CASTIGO_CARTERA", "contra_castigo", "860510", "CREDITO"),
 
     ("COMPRA_FACTURA", "proveedor", "220505", "CREDITO"),
     ("COMPRA_FACTURA", "gasto", "539995", "DEBITO"),

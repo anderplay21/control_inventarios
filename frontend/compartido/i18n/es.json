@@ -211,7 +211,8 @@
       "rtmDespachos": "Recogidas y entregas",
       "rtmLiquidacion": "Liquidación",
       "rtmGarantias": "Garantías",
-      "rtmIndicadores": "Indicadores"
+      "rtmIndicadores": "Indicadores",
+      "facturaVenta": "Factura de venta"
     },
     "section": {
       "principal": "Principal",
@@ -281,7 +282,8 @@
       "corporativo": "Corporativo",
       "compras": "Compras",
       "planificacion": "Planificación",
-      "cadena": "Cadena de Suministro"
+      "cadena": "Cadena de Suministro",
+      "ingresos": "Ingresos"
     },
     "ws": {
       "control": "Control de Estibas",

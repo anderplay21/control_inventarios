@@ -376,6 +376,33 @@ Módulo financiero y contable completo (no es un stub). Color: `#1A3A6B`. 11 pá
 
 Contabilidad (cuentas y comprobantes, centros de costo); cuentas por cobrar y por pagar (con antigüedad de cartera); tesorería (bancos, cuentas, movimientos); presupuestos; proyectos y rentabilidad; activos fijos; compras (requisiciones y órdenes); consolidación multi-empresa; tributación; reportes financieros (balance general, estado de resultados, flujo de caja); configuración (numeraciones, tasas de cambio, integraciones).
 
+### Ingresos · Factura de venta (`/erp/ingresos/factura-venta`)
+
+Menú **Gestión Financiera → Ingresos → Factura de venta**. Funciona sin WMS ni POS: las líneas son texto libre (referencia, descripción, cantidad, precio, descuento, impuesto), sin bodega, lista de precios ni descuento de inventario. CxC y Facturación ya no crean facturas: su botón «Nueva factura» lleva aquí.
+
+- **Tipos de documento:** *Factura de venta* (resolución `FACTURA_VENTA`) y *Ticket* (mismo documento, numerado con la resolución `POS`). El número lo asigna la resolución vigente; no se digita.
+- **Requisitos previos:** empresa ERP sembrada (`POST /erp/contabilidad/sembrar`), resolución vigente del tipo a emitir y de `NOTA_CREDITO`/`NOTA_DEBITO`, una cuenta bancaria activa para registrar pagos. El vendedor es un tercero con «Es vendedor»; el centro de costos sale de `erp_centros_costo`.
+- **Cliente:** se busca por número de documento; si no existe en Terceros se crea al guardar. Vacío = consumidor final.
+- **Contabilidad:** emitir asienta el evento de venta; los pagos, notas y el castigo generan su comprobante (`factura.comprobante_id` enlaza el de la emisión).
+
+**Acciones según el estado** (el detalle muestra las no permitidas deshabilitadas, con el motivo):
+
+| Acción | Cuándo se permite |
+|---|---|
+| Editar, editar retenciones, volver a borrador, anular | Sin pagos aplicados y aún `POR_TRANSMITIR` a la DIAN (editar también en borrador) |
+| Agregar pago, cerrar sin pago (castigo) | Emitida con saldo por cobrar |
+| Nota crédito / nota débito | Emitida, parcialmente pagada, vencida o pagada |
+| Imprimir, PDF, compartir, clonar, adjuntar | Siempre |
+| Aplicar anticipo | Deshabilitada (próximamente) |
+
+Anulada y castigada no admiten cambios. Después de un pago o de transmitir a la DIAN, toda corrección va por nota crédito o débito.
+
+**Permisos** (perfil de Finanzas): `fin_cartera` ver; `fin_comprobantes` crear, editar, emitir, notas, clonar; `fin_pagos` registrar pagos; `fin_anular` anular y volver a borrador; `fin_impuestos` editar retenciones (se prellenan con la sugerencia del sistema); `fin_castigar` cerrar sin pago (pide motivo; asienta contra la cuenta `519910`, provisional hasta confirmarla con contabilidad); `asistente` usar el Agente de IA.
+
+**Agente de IA:** el botón del formulario lee un PDF, JPG o PNG (máx. `ERP_IA_MAX_MB`, 10 MB) y llena el formulario tomando al **comprador** como cliente. Nunca guarda: el usuario revisa y guarda; lo que no pudo casar (impuesto, forma de pago, cliente nuevo) sale como advertencia. Proveedor con `ERP_IA_PROVEEDOR`: `anthropic` (`TITTANBOT_API_KEY`, `ERP_IA_MODELO`) u `openai` (`OPENAI_API_KEY`, `ERP_IA_MODELO_OPENAI`). Sin clave el botón aparece deshabilitado. Ver `.env.prod.example`.
+
+Pruebas: `tests/integration/test_erp_ventas.py`, `tests/unit/test_erp_ventas_*.py`, `tests/humo_erp.py` y en navegador `frontend/tools/probar_factura_venta_flujo.cjs` y `probar_factura_venta_ia.cjs`.
+
 ---
 
 ## SCM — Cadena de Suministro

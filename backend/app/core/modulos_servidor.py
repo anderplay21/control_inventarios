@@ -31,7 +31,10 @@ log = logging.getLogger(__name__)
 DEPENDENCIAS: Dict[str, Tuple[str, ...]] = {
     "tms": ("gh",),              # conductores de Gestión Humana
     "pos": ("wms", "erp"),       # bodegas del WMS, resoluciones y notas del ERP
-    "reencauche": ("wms", "tms"),  # bodegas y recogidas
+    # El WMS contabiliza recepciones, despachos y mermas, y factura el 3PL: todo
+    # eso necesita la empresa, las resoluciones y el plan de cuentas del ERP.
+    "wms": ("erp",),
+    "reencauche": ("wms", "tms", "erp"),  # bodegas, recogidas y la factura de la liquidación
 }
 
 

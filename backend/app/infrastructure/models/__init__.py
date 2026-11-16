@@ -202,6 +202,7 @@ from app.infrastructure.models.erp_gestion import (  # noqa: F401
 )
 from app.infrastructure.models.erp_facturacion import (  # noqa: F401
     ERPResolucionFacturacion, ERPNotaCreditoCliente, ERPLineaNotaCredito,
+    ERPNotaDebitoCliente, ERPFacturaClienteEvento, ERPFacturaClienteAdjunto,
 )
 from app.infrastructure.models.pos import (  # noqa: F401
     POSListaPrecio, POSPrecio, POSCaja, POSTurno, POSMovimientoCaja, POSVenta,

@@ -123,6 +123,9 @@ class ERPTercero(Base, TimestampMixin, SoftDeleteMixin):
     es_proveedor = sa.Column(sa.Boolean, default=False, nullable=False)
     es_empleado = sa.Column(sa.Boolean, default=False, nullable=False)
     es_socio = sa.Column(sa.Boolean, default=False, nullable=False)
+    # Puede aparecer como vendedor en una factura de venta. Es independiente de
+    # `es_empleado`: un vendedor puede ser un agente externo.
+    es_vendedor = sa.Column(sa.Boolean, default=False, server_default="false", nullable=False)
 
     # ── Contacto ──
     direccion = sa.Column(sa.String(300))

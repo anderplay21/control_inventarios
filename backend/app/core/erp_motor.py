@@ -486,6 +486,19 @@ NATURALEZA_POR_EVENTO: Dict[str, tuple] = {
     "VENTA_NOTA_CREDITO": (TipoComprobante.DIARIO, {
         "cartera": "C", "ingreso": "D", "iva_generado": "D",
     }),
+    # Espejo de la nota crédito: aumenta lo que el cliente debe por una factura.
+    "VENTA_NOTA_DEBITO": (TipoComprobante.DIARIO, {
+        "cartera": "D", "ingreso": "C", "iva_generado": "C",
+    }),
+    # «Cerrar sin pago»: el saldo de la factura se da por perdido. La cartera sale
+    # contra un gasto, no contra la provisión: si la empresa provisiona, el
+    # tratamiento es otro y se configura con su propia regla. El mismo valor
+    # queda en cuentas de orden (control / por contra) para seguir la gestión de
+    # cobro de lo castigado.
+    "CASTIGO_CARTERA": (TipoComprobante.DIARIO, {
+        "gasto_castigo": "D", "cartera": "C",
+        "control_castigo": "D", "contra_castigo": "C",
+    }),
     "COMPRA_FACTURA": (TipoComprobante.DIARIO, {
         "gasto": "D", "inventario": "D", "iva_descontable": "D",
         "proveedor": "C", "retefuente": "C", "reteica": "C", "reteiva": "C",

@@ -131,16 +131,76 @@ async def principal():
                              params={"empresa_id": eid, "base": 5000000,
                                      "concepto": "Compras generales"}))
 
-        # ── Una factura de verdad, que es lo que ejercita el motor ──
+        # ── Lo que la facturación necesita: resoluciones y una cuenta bancaria ──
         import datetime
         hoy = datetime.date.today().isoformat()
+        en_un_anio = (datetime.date.today() + datetime.timedelta(days=365)).isoformat()
+        r = revisar("GET  /erp/resoluciones",
+                    await c.get(API + "/erp/resoluciones", params={"empresa_id": eid}))
+        vigentes = {x["tipo_documento"] for x in (r.json() if r.status_code == 200 else [])
+                    if x.get("activa") and x.get("vigencia_hasta", "") >= hoy}
+        for tipo, prefijo in (("FACTURA_VENTA", "HFV"), ("NOTA_CREDITO", "HNC")):
+            if tipo not in vigentes:
+                revisar("POST /erp/resoluciones (%s)" % tipo, await c.post(API + "/erp/resoluciones", json={
+                    "empresa_id": eid, "tipo_documento": tipo, "numero_resolucion": "HUMO-" + prefijo,
+                    "fecha_resolucion": hoy, "prefijo": prefijo, "desde": 1, "hasta": 100000,
+                    "vigencia_desde": hoy, "vigencia_hasta": en_un_anio, "clave_tecnica": "humo"}))
+        r = revisar("GET  /erp/tesoreria/cuentas", await c.get(API + "/erp/tesoreria/cuentas"))
+        cuentas = [x for x in (r.json() if r.status_code == 200 else []) if x.get("activo")]
+        if cuentas:
+            cuenta_id = cuentas[0]["id"]
+        else:
+            b = revisar("POST /erp/tesoreria/bancos",
+                        await c.post(API + "/erp/tesoreria/bancos", json={"nombre": "Banco de humo"}))
+            k = revisar("POST /erp/tesoreria/cuentas", await c.post(API + "/erp/tesoreria/cuentas", json={
+                "banco_id": b.json()["id"], "numero": "HUMO-001", "tipo": "CORRIENTE", "empresa_id": eid}))
+            cuenta_id = k.json()["id"]
+
+        # ── Ruta vieja de cartera: delega en la emisión nueva e ignora el número ──
         r = await c.post(API + "/erp/cxc/facturas", json={
-            "empresa_id": eid, "numero": "HUMO-" + hoy.replace("-", ""),
+            "empresa_id": eid, "numero": "NUMERO-DIGITADO",
             "cliente_nombre": "Cliente de humo", "fecha": hoy,
             "fecha_vencimiento": hoy, "lineas": [
                 {"descripcion": "Servicio", "cantidad": 1,
                  "precio_unitario": 1000000, "descuento_pct": 0}]})
-        revisar("POST /erp/cxc/facturas (genera asiento)", r, (200, 201, 409))
+        revisar("POST /erp/cxc/facturas (genera asiento)", r)
+        if r.status_code == 201 and r.json()["numero"] == "NUMERO-DIGITADO":
+            fallos.append("la ruta vieja guardó el número digitado")
+
+        # ── Ingresos · Factura de venta: emitir, cobrar, corregir, castigar ──
+        r = revisar("POST /erp/ingresos/facturas", await c.post(API + "/erp/ingresos/facturas", json={
+            "empresa_id": eid, "cliente_identificacion": "800197268", "cliente_nombre": "Tercero de humo",
+            "cliente_email": "humo@local.co", "fecha": hoy,
+            "lineas": [{"referencia": "H-1", "descripcion": "Servicio de humo", "cantidad": 2,
+                        "precio_unitario": 500000, "descuento_pct": 10}]}))
+        if r.status_code == 201:
+            fid = r.json()["id"]
+            print("      factura %s por %s" % (r.json()["numero"], r.json()["total"]))
+            rl = revisar("GET  /erp/ingresos/facturas",
+                         await c.get(API + "/erp/ingresos/facturas", params={"limite": 5}))
+            if rl.status_code == 200 and fid not in [x["id"] for x in rl.json()]:
+                fallos.append("la factura nueva no encabeza el listado")
+            revisar("POST /erp/ingresos/facturas/{id}/pagos", await c.post(
+                API + "/erp/ingresos/facturas/%s/pagos" % fid,
+                json={"monto": 300000, "cuenta_bancaria_id": cuenta_id, "fecha": hoy}))
+            revisar("POST /erp/ingresos/facturas/{id}/pagos (sobrepago rechazado)", await c.post(
+                API + "/erp/ingresos/facturas/%s/pagos" % fid,
+                json={"monto": 99999999, "cuenta_bancaria_id": cuenta_id, "fecha": hoy}), (422,))
+            revisar("POST /erp/ingresos/facturas/{id}/notas-credito", await c.post(
+                API + "/erp/ingresos/facturas/%s/notas-credito" % fid,
+                json={"valor": 100000, "motivo": "Rebaja de humo"}), (201,))
+            revisar("POST /erp/ingresos/facturas/{id}/anular (con pagos: rechazado)", await c.post(
+                API + "/erp/ingresos/facturas/%s/anular" % fid, json={"motivo": "humo"}), (409,))
+            d = revisar("POST /erp/ingresos/facturas/{id}/castigar", await c.post(
+                API + "/erp/ingresos/facturas/%s/castigar" % fid, json={"motivo": "Castigo de humo"}))
+            if d.status_code == 200:
+                det = d.json()
+                print("      estado %s · saldo %s · %d eventos en el historial"
+                      % (det["estado"], det["saldo"], len(det["historial"])))
+                if det["estado"] != "CASTIGADA" or float(det["saldo"]) != 0:
+                    fallos.append("el castigo no dejó la factura castigada en cero")
+            revisar("GET  /erp/ingresos/facturas/{id}/pdf",
+                    await c.get(API + "/erp/ingresos/facturas/%s/pdf" % fid))
 
         # ── Libros ──
         revisar("GET  /erp/contabilidad/balance-comprobacion",

@@ -86,3 +86,38 @@ async def tomar_numero(db: AsyncSession, resolucion_id: int) -> Tuple[str, ERPRe
 
 def restantes(res: ERPResolucionFacturacion) -> int:
     return int(res.hasta - max(res.actual or 0, res.desde - 1))
+
+
+# Qué se configura en cada caso, para que el mensaje diga dónde ir.
+_NOMBRE_TIPO = {
+    "FACTURA_VENTA": "factura electrónica de venta",
+    "POS": "documento equivalente POS (ticket)",
+    "NOTA_CREDITO": "nota crédito",
+    "NOTA_DEBITO": "nota débito",
+}
+
+
+async def resolucion_vigente(db: AsyncSession, empresa_id: int, tipo_documento: str,
+                             hoy: Optional[date] = None) -> ERPResolucionFacturacion:
+    """La resolución con que numerar un documento de este tipo, hoy.
+
+    Entre las activas y vigentes prefiere la que todavía tiene números, para no
+    rechazar una factura porque la más vieja se agotó mientras otra sigue
+    disponible. Si ninguna tiene, devuelve la agotada: `tomar_numero` es quien
+    dice que se agotó, con el rango exacto.
+    """
+    from sqlalchemy import select
+
+    hoy = hoy or date.today()
+    candidatas = list((await db.execute(select(ERPResolucionFacturacion).where(
+        ERPResolucionFacturacion.empresa_id == empresa_id,
+        ERPResolucionFacturacion.tipo_documento == tipo_documento,
+        ERPResolucionFacturacion.activa.is_(True),
+        ERPResolucionFacturacion.vigencia_desde <= hoy,
+        ERPResolucionFacturacion.vigencia_hasta >= hoy,
+    ).order_by(ERPResolucionFacturacion.id))).scalars().all())
+    if not candidatas:
+        raise ResolucionInvalida(
+            f"No hay una resolución vigente de {_NOMBRE_TIPO.get(tipo_documento, tipo_documento)}. "
+            "Regístrela en Finanzas → Resoluciones de facturación antes de emitir.")
+    return next((r for r in candidatas if restantes(r) > 0), candidatas[0])

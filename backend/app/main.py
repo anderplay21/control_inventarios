@@ -1277,6 +1277,28 @@ async def _migrar_esquema(esquema: str) -> None:
             ("erp_facturas_cliente", "resolucion_id", "INTEGER REFERENCES erp_resolucion_facturacion(id)"),
             ("erp_facturas_cliente", "origen", "VARCHAR(20)"),
             ("erp_facturas_cliente", "estado_dian", "VARCHAR(20)"),
+            # ERP · Ingresos · Factura de venta. Todo opcional o con valor por
+            # omisión: las facturas existentes quedan como FACTURA_VENTA, sin
+            # vendedor y sin retenciones.
+            ("erp_facturas_cliente", "tipo_documento", "VARCHAR(20) DEFAULT 'FACTURA_VENTA' NOT NULL"),
+            ("erp_facturas_cliente", "tercero_id", "INTEGER REFERENCES erp_terceros(id)"),
+            ("erp_facturas_cliente", "vendedor_id", "INTEGER REFERENCES erp_terceros(id)"),
+            ("erp_facturas_cliente", "forma_pago", "VARCHAR(100)"),
+            ("erp_facturas_cliente", "medio_pago", "VARCHAR(100)"),
+            ("erp_facturas_cliente", "remision", "VARCHAR(100)"),
+            ("erp_facturas_cliente", "notas_adicionales", "TEXT"),
+            ("erp_facturas_cliente", "firma", "VARCHAR(500)"),
+            ("erp_facturas_cliente", "retencion_fuente", "NUMERIC(18,2) DEFAULT 0 NOT NULL"),
+            ("erp_facturas_cliente", "retencion_ica", "NUMERIC(18,2) DEFAULT 0 NOT NULL"),
+            ("erp_facturas_cliente", "retencion_iva", "NUMERIC(18,2) DEFAULT 0 NOT NULL"),
+            ("erp_facturas_cliente", "retenciones_editadas", "BOOLEAN DEFAULT false NOT NULL"),
+            ("erp_facturas_cliente", "cerrada_motivo", "TEXT"),
+            ("erp_facturas_cliente", "cerrada_por", "VARCHAR(200)"),
+            ("erp_facturas_cliente", "cerrada_en", "TIMESTAMPTZ"),
+            ("erp_facturas_cliente", "comprobante_id", "INTEGER REFERENCES erp_comprobantes(id)"),
+            ("erp_lineas_factura_cliente", "referencia", "VARCHAR(100)"),
+            ("erp_lineas_factura_cliente", "item_id", "INTEGER"),
+            ("erp_terceros", "es_vendedor", "BOOLEAN DEFAULT false NOT NULL"),
             # Lubricación: el intervalo con que se programó cada cambio de
             # aceite, y con qué lubricante se hizo cada adición.
             ("eam_lube_carga", "intervalo_cambio", "DOUBLE PRECISION"),
@@ -1305,6 +1327,13 @@ async def _migrar_esquema(esquema: str) -> None:
             await conn.execute(text(
                 "ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s" % (tabla, columna, tipo)
             ))
+
+        # «Cerrar sin pago» deja la factura CASTIGADA. `estado` es un enum nativo
+        # y hay uno por esquema: `create_all` lo crea completo en una base nueva,
+        # pero en las existentes el valor se agrega acá. PostgreSQL 12+ lo admite
+        # dentro de la transacción, siempre que el valor no se use en ella.
+        await conn.execute(text(
+            "ALTER TYPE estadofactura ADD VALUE IF NOT EXISTS 'CASTIGADA'"))
 
         # Catálogos organizativos y contables. Se siembran las sedes y áreas
         # típicas y se rescata lo que ya esté escrito a mano en los activos.
@@ -1801,6 +1830,9 @@ async def _migrar_esquema(esquema: str) -> None:
                 ('ERP','FORMA_PAGO','Crédito 30 días',2),
                 ('ERP','FORMA_PAGO','Crédito 60 días',3),
                 ('ERP','FORMA_PAGO','Transferencia',4),
+                ('ERP','MEDIO_PAGO','Efectivo',1),
+                ('ERP','MEDIO_PAGO','Transferencia',2),
+                ('ERP','MEDIO_PAGO','Tarjeta',3),
                 ('ERP','TIPO_IMPUESTO','IVA 19%',1),
                 ('ERP','TIPO_IMPUESTO','IVA 5%',2),
                 ('ERP','TIPO_IMPUESTO','Excluido',3),

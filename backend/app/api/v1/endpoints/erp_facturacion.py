@@ -19,7 +19,7 @@ router = APIRouter(prefix="/erp", tags=["ERP · Facturación"])
 
 class ResolucionIn(BaseModel):
     empresa_id: Optional[int] = None
-    tipo_documento: Literal["FACTURA_VENTA", "POS", "NOTA_CREDITO"] = "POS"
+    tipo_documento: Literal["FACTURA_VENTA", "POS", "NOTA_CREDITO", "NOTA_DEBITO"] = "POS"
     numero_resolucion: str = Field(min_length=1, max_length=40)
     fecha_resolucion: date
     prefijo: str = Field(min_length=1, max_length=10, pattern=r"^[A-Za-z0-9]+$")

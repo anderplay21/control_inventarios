@@ -36,10 +36,31 @@ def solo_ga():
     return _arrancar("eam")
 
 
+@pytest.fixture(scope="module")
+def solo_erp():
+    return _arrancar("erp")
+
+
+def test_servidor_solo_erp_factura_sin_wms_ni_pos(solo_erp):
+    """El ERP funciona solo: la factura de venta está y no arrastra WMS ni POS."""
+    for ruta in ("/erp/ingresos/facturas", "/erp/ingresos/facturas/{factura_id}",
+                 "/erp/ingresos/facturas/{factura_id}/pagos", "/erp/ingresos/facturas/ia/extraer"):
+        assert ruta in solo_erp["rutas"], ruta
+    assert not [r for r in solo_erp["rutas"] if r.startswith(("/wms", "/pos", "/reencauche"))]
+    assert not {a for a in solo_erp["archivos"] if a.startswith(("wms", "pos", "reencauche"))}
+    assert "erp" not in ms.DEPENDENCIAS
+
+
 def test_sin_variable_se_carga_todo(todo):
     assert any(r.startswith("/wms") for r in todo["rutas"])
     assert any(r.startswith("/eam/lube") for r in todo["rutas"])
     assert len(todo["rutas"]) > 300
+
+
+def test_facturacion_3pl_esta_montada(todo):
+    # Se perdió una vez al pasar de include_router a la tabla RUTAS.
+    assert "/wms/3pl/liquidaciones" in todo["rutas"]
+    assert "/wms/3pl/liquidaciones/{lid}/facturar" in todo["rutas"]
 
 
 def test_solo_gestion_de_activos(solo_ga, todo):
@@ -61,7 +82,8 @@ def _con(valor, monkeypatch):
 def test_dependencias_y_esenciales(monkeypatch):
     assert _con("", monkeypatch) is None
     assert _con("todos", monkeypatch) is None
-    assert _con("reencauche", monkeypatch) == {"reencauche", "wms", "tms", "gh", "base"}
+    assert _con("reencauche", monkeypatch) == {"reencauche", "wms", "tms", "gh", "erp", "base"}
+    assert _con("wms", monkeypatch) == {"wms", "erp", "base"}
     assert _con(" EAM , ags ", monkeypatch) == {"eam", "ags", "base"}
 
 
