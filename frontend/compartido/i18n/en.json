@@ -186,7 +186,8 @@
       "rtmLiquidacion": "Billing",
       "rtmGarantias": "Warranty",
       "rtmIndicadores": "KPIs",
-      "facturaVenta": "Sales invoice"
+      "facturaVenta": "Sales invoice",
+      "pagosRecibidos": "Payments received"
     },
     "section": {
       "principal": "Main",

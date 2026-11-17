@@ -106,3 +106,90 @@ def pdf_factura(det, empresa, firma: str = None) -> bytes:
         pdf.multi_cell(0, 4, _t(f"{'CUDE' if det.tipo_documento == 'TICKET' else 'CUFE'}: {det.cufe}"),
                        new_x="LMARGIN", new_y="NEXT")
     return bytes(pdf.output())
+
+
+TIPO_INGRESO = {"PAGO_FACTURA": "Pago a factura", "ANTICIPO": "Anticipo", "OTROS": "Otros ingresos"}
+
+
+def pdf_recibo(det, empresa) -> bytes:
+    """PDF del recibo de caja. `det` es el detalle del recibo (ReciboDetalle).
+
+    Lleva las notas y detalles adicionales; los comentarios y recordatorios son
+    internos y NUNCA se imprimen.
+    """
+    mon = det.moneda or "COP"
+    pdf = FPDF(format="A4", unit="mm")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.cell(0, 7, _t(empresa.razon_social), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 5, _t(f"NIT {empresa.nit}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "B", 11)
+    titulo = f"RECIBO DE CAJA N.º {det.numero}"
+    if det.estado == "ANULADO":
+        titulo += "  (ANULADO)"
+    pdf.cell(0, 6, _t(titulo), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "", 9)
+    for etiqueta, valor in (
+        ("Fecha", det.fecha.isoformat()), ("Recibido de", det.cliente_nombre),
+        ("Identificación", det.cliente_nit or ""), ("Tipo de ingreso", TIPO_INGRESO.get(det.tipo_ingreso, "")),
+        ("Cuenta", det.cuenta_bancaria or ""), ("Forma de pago", det.forma_pago or ""),
+        ("Medio de pago", det.medio_pago or ""), ("Referencia", det.referencia or ""),
+    ):
+        if valor:
+            pdf.cell(35, 5, _t(etiqueta + ":"))
+            pdf.cell(0, 5, _t(valor), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+
+    def tabla(titulos, anchos, filas):
+        pdf.set_font("Helvetica", "B", 8)
+        for ancho, t in zip(anchos, titulos):
+            pdf.cell(ancho, 6, _t(t), border=1)
+        pdf.ln()
+        pdf.set_font("Helvetica", "", 8)
+        for fila in filas:
+            for ancho, v in zip(anchos, fila):
+                pdf.cell(ancho, 6, _t(v), border=1)
+            pdf.ln()
+        pdf.ln(2)
+
+    if det.facturas:
+        tabla(("Factura", "Fecha", "Valor aplicado"), (60, 40, 50),
+              [(f.factura_numero, f.factura_fecha.isoformat() if f.factura_fecha else "",
+                _plata(f.monto, mon)) for f in det.facturas])
+    if det.lineas_otros:
+        tabla(("Cuenta", "Descripción", "Valor"), (60, 80, 50),
+              [(f"{l.cuenta_codigo} {l.cuenta_nombre}"[:40], (l.descripcion or "")[:50],
+                _plata(l.valor, mon)) for l in det.lineas_otros])
+    if det.tipo_ingreso == "ANTICIPO":
+        pdf.cell(0, 5, _t("Anticipo recibido del cliente, a aplicar a facturas futuras."),
+                 new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(2)
+    if det.retenciones:
+        tabla(("Retención", "Concepto", "Base", "%", "Valor"), (45, 50, 35, 20, 40),
+              [(r.nombre, r.concepto or "", _plata(r.base, ""), f"{Decimal(r.porcentaje):g}",
+                _plata(r.valor, mon)) for r in det.retenciones])
+
+    pdf.set_font("Helvetica", "", 9)
+    filas = [("Valor recibido", det.valor_bruto)]
+    if Decimal(det.total_retenciones or 0):
+        filas += [("Retenciones", det.total_retenciones), ("Neto recibido", det.valor_neto)]
+    for etiqueta, valor in filas:
+        pdf.cell(150, 5, _t(etiqueta), align="R")
+        pdf.cell(40, 5, _t(_plata(valor, mon)), align="R", new_x="LMARGIN", new_y="NEXT")
+
+    if det.notas_adicionales:
+        pdf.ln(3)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(0, 5, "Notas", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 9)
+        pdf.multi_cell(0, 5, _t(det.notas_adicionales), new_x="LMARGIN", new_y="NEXT")
+    if det.estado == "ANULADO" and det.anulado_motivo:
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.multi_cell(0, 4, _t(f"Anulado: {det.anulado_motivo}"), new_x="LMARGIN", new_y="NEXT")
+    return bytes(pdf.output())

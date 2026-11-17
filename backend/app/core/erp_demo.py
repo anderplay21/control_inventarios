@@ -695,7 +695,7 @@ async def _cierre_de_mes(db, empresa_id, dia, az, centros, activos, usuario,
         FROM erp_comprobante_lineas l
         JOIN erp_comprobantes c ON c.id = l.comprobante_id
         JOIN erp_plan_cuentas pc ON pc.id = l.cuenta_id
-        WHERE c.empresa_id = :e AND c.estado = 'CONTABILIZADO'
+        WHERE c.empresa_id = :e AND c.estado IN ('CONTABILIZADO', 'ANULADO')
           AND left(pc.codigo, 1) = '4'
           AND date_trunc('month', c.fecha) = date_trunc('month', CAST(:f AS date))
     """), {"e": empresa_id, "f": dia})).scalar()
@@ -777,7 +777,7 @@ async def _presupuestos(db, empresa_id, az, cuentas, centros, desde, hasta,
                 FROM erp_comprobante_lineas l
                 JOIN erp_comprobantes c ON c.id = l.comprobante_id
                 JOIN erp_plan_cuentas pc ON pc.id = l.cuenta_id
-                WHERE c.empresa_id = :e AND c.estado = 'CONTABILIZADO'
+                WHERE c.empresa_id = :e AND c.estado IN ('CONTABILIZADO', 'ANULADO')
                   AND extract(year from c.fecha) = :a
                   AND left(pc.codigo, 1) IN ('5', '6')
                 GROUP BY 1, 2
@@ -879,7 +879,7 @@ async def _extracto(db, empresa_id, az, cuenta_banco, cuentas, conteo) -> None:
         FROM erp_comprobante_lineas l
         JOIN erp_comprobantes c ON c.id = l.comprobante_id
         WHERE c.empresa_id = :e AND l.cuenta_id = :cta
-          AND c.estado = 'CONTABILIZADO'
+          AND c.estado IN ('CONTABILIZADO', 'ANULADO')
         ORDER BY c.fecha DESC
         LIMIT 400
     """), {"e": empresa_id, "cta": cuentas["111005"].id})).all()

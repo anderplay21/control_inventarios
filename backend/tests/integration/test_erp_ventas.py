@@ -242,7 +242,12 @@ async def _lineas_por_cuenta(db, comprobante_id):
         select(ERPPlanCuenta.codigo, ERPComprobanteLinea.debito, ERPComprobanteLinea.credito)
         .join(ERPPlanCuenta, ERPPlanCuenta.id == ERPComprobanteLinea.cuenta_id)
         .where(ERPComprobanteLinea.comprobante_id == comprobante_id))).all()
-    return {c: (Decimal(d or 0), Decimal(k or 0)) for c, d, k in filas}
+    # Suma por cuenta: un recibo de varias facturas lleva una línea de cartera por factura.
+    total: dict = {}
+    for c, d, k in filas:
+        td, tk = total.get(c, (Decimal(0), Decimal(0)))
+        total[c] = (td + Decimal(d or 0), tk + Decimal(k or 0))
+    return total
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -786,7 +791,9 @@ async def test_pago_total_deja_cobrada(db, empresa_sembrada):
     pago = await erp_ventas.registrar_recaudo(db, fac, PagoVentaEntrada(
         monto=fac.saldo, cuenta_bancaria_id=cta.id, metodo_pago="transferencia"), "prueba")
     assert fac.saldo == 0 and fac.estado == EstadoFactura.PAGADA
-    assert pago.metodo_pago == "Transferencia" and pago.numero == f"RC-{fac.numero}-1"
+    # El pago rápido crea un recibo de caja con el talonario RCJ (Pagos recibidos).
+    assert pago.metodo_pago == "Transferencia" and pago.numero.startswith(f"RCJ-{HOY.year}-")
+    assert pago.recibo_id is not None and pago.origen == "RECIBO"
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -1041,9 +1048,9 @@ async def test_detalle_trazable(db, empresa_sembrada):
     assert [e.tipo for e in det.historial] == ["EMISION", "PAGO"]
     assert all(e.usuario and e.created_at for e in det.historial)
     assert det.resolucion.prefijo == "FV"
-    # «Aplicar anticipo diferido».
-    assert det.acciones["aplicar_anticipo"] == {
-        "permitida": False, "motivo": erp_ventas._DIFERIDAS["aplicar_anticipo"]}
+    # Sin anticipos del cliente, «Aplicar anticipo» está deshabilitada con su motivo.
+    assert det.acciones["aplicar_anticipo"]["permitida"] is False
+    assert "anticipos por aplicar" in det.acciones["aplicar_anticipo"]["motivo"]
     assert det.acciones["agregar_pago"]["permitida"]
     # Con un pago ya no se edita ni se anula.
     assert not det.acciones["anular"]["permitida"]

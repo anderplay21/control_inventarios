@@ -418,6 +418,7 @@ class PagoVentaEntrada(BaseModel):
     fecha: date = Field(default_factory=date.today)
     metodo_pago: Optional[str] = None       # catálogo ERP/MEDIO_PAGO
     referencia: Optional[str] = Field(None, max_length=200)
+    # Ya no se usa: el número sale del talonario de recibos de caja (RCJ).
     numero: Optional[str] = Field(None, max_length=50)
 
 
@@ -425,60 +426,30 @@ async def registrar_recaudo(db: AsyncSession, fac: ERPFacturaCliente, datos: Pag
                             usuario: str) -> ERPPago:
     """Registra el cobro total o parcial de una factura de venta.
 
-    Bloquea la fila de la factura mientras decide, para que dos pagos a la vez no
-    se apliquen sobre el mismo saldo. Un rechazo no deja pago, asiento ni cambio
-    de saldo; tampoco hace commit (lo hace quien llama).
+    Es el pago rápido del listado, el pago al crear la factura y el `POST
+    /erp/pagos` de cobro: todos crean un recibo de caja de una sola línea
+    (Pagos recibidos), con su consecutivo, su asiento, su movimiento bancario y
+    las mismas validaciones. Un rechazo no deja pago, asiento ni cambio de
+    saldo; tampoco hace commit (lo hace quien llama).
     """
-    # `populate_existing`: con el candado tomado se relee el saldo de la base; el
-    # objeto en memoria podría traer el de antes de otro pago.
-    fac = (await db.execute(select(ERPFacturaCliente).where(
-        ERPFacturaCliente.id == fac.id).with_for_update()
-        .execution_options(populate_existing=True))).scalar_one()
-    monto = r2(datos.monto)
-    if monto <= 0:
+    from app.core import erp_recibos
+
+    if r2(datos.monto) <= 0:
         raise _rechazo("El valor del pago debe ser mayor que cero.")
-    if fac.estado not in COBRABLES:
-        raise _rechazo(f"La factura {fac.numero} está {fac.estado.value.lower().replace('_', ' ')}: "
-                       "no admite pagos.")
-    saldo = r2(fac.saldo)
-    if monto > saldo:
-        raise _rechazo(f"El pago supera el saldo de la factura {fac.numero}. "
-                       f"Se pueden recibir hasta {saldo}.")
     if not datos.cuenta_bancaria_id:
         raise _rechazo("Elija la cuenta bancaria donde entra el dinero.")
-    cuenta = await db.get(ERPCuentaBancaria, datos.cuenta_bancaria_id)
-    if cuenta is None or not cuenta.activo or cuenta.empresa_id not in (None, fac.empresa_id):
-        raise _rechazo("La cuenta bancaria no existe o no pertenece a la empresa.")
-    metodo = await valor_catalogo(db, "MEDIO_PAGO", datos.metodo_pago, "medio de pago")
-
-    previos = len((await db.execute(select(ERPPago.id).where(
-        ERPPago.factura_cliente_id == fac.id))).all())
-    pago = ERPPago(
-        empresa_id=fac.empresa_id, tipo=TipoPago.COBRO,
-        numero=datos.numero or f"RC-{fac.numero}-{previos + 1}", fecha=datos.fecha,
-        factura_cliente_id=fac.id, cuenta_bancaria_id=cuenta.id, monto=monto,
-        moneda=fac.moneda or "COP", metodo_pago=metodo, referencia=datos.referencia,
-        estado=EstadoPago.PROCESADO, concepto=f"Recaudo factura {fac.numero}")
-    db.add(pago)
-    await db.flush()
-
-    # El dinero entra a la cuenta contable de esa cuenta bancaria si la tiene;
-    # si no, a la del papel «banco» de las reglas.
-    comp = await erp_motor.asentar(
-        db, empresa_id=fac.empresa_id, evento="RECAUDO_CLIENTE", tipo=TipoComprobante.INGRESO,
-        fecha=datos.fecha, concepto=f"Recaudo factura {fac.numero} - {fac.cliente_nombre}",
-        lineas=[erp_motor.Linea("banco", debito=monto, tercero_id=fac.tercero_id,
-                                cuenta_id=cuenta.cuenta_contable_id),
-                erp_motor.Linea("cartera", credito=monto, tercero_id=fac.tercero_id)],
-        usuario=usuario, documento_tipo="pago", documento_id=pago.id,
-        documento_numero=pago.numero, moneda=fac.moneda or "COP")
-    pago.comprobante_id = comp.id
-
-    fac.saldo = saldo - monto
-    fac.estado = EstadoFactura.PAGADA if fac.saldo == 0 else EstadoFactura.PARCIALMENTE_PAGADA
-    await historial(db, fac.id, "PAGO", usuario, f"Pago {pago.numero} por {monto}",
-                    {"pago_id": pago.id, "monto": str(monto), "saldo": str(fac.saldo)})
-    return pago
+    # Una factura de consumidor final no tiene tercero: su pago se acepta igual,
+    # con el nombre de la factura (el formulario de Pagos recibidos sí lo exige).
+    tercero = await erp_recibos.tercero_de_factura(db, fac)
+    rec = await erp_recibos.crear(db, erp_recibos.ReciboEntrada(
+        empresa_id=fac.empresa_id, tipo_ingreso="PAGO_FACTURA",
+        tercero_id=tercero.id if tercero else None, cuenta_bancaria_id=datos.cuenta_bancaria_id,
+        fecha=datos.fecha, medio_pago=datos.metodo_pago, moneda=fac.moneda or "COP",
+        centro_costo_id=fac.centro_costo_id, referencia=datos.referencia,
+        facturas=[erp_recibos.AplicacionEntrada(factura_id=fac.id, monto=datos.monto)]),
+        usuario, permitir_sin_tercero=True)
+    return (await db.execute(select(ERPPago).where(
+        ERPPago.recibo_id == rec.id, ERPPago.factura_cliente_id == fac.id))).scalar_one()
 
 
 FacturaVentaEntrada.model_rebuild()
@@ -499,7 +470,6 @@ ACCIONES = (
 )
 
 _DIFERIDAS = {
-    "aplicar_anticipo": "Próximamente: los anticipos llegan con la sección de tesorería.",
     "volver_recurrente": "Próximamente: las facturas recurrentes llegan en una entrega posterior.",
 }
 
@@ -532,8 +502,13 @@ def es_libre(fac: ERPFacturaCliente, hay_pagos: bool) -> bool:
             and not hay_pagos and (fac.estado_dian or "POR_TRANSMITIR") == "POR_TRANSMITIR")
 
 
-def acciones_permitidas(fac: ERPFacturaCliente, hay_pagos: bool) -> dict:
-    """{acción: {"permitida": bool, "motivo": str | None}} para esta factura."""
+def acciones_permitidas(fac: ERPFacturaCliente, hay_pagos: bool,
+                        hay_anticipos: bool = False) -> dict:
+    """{acción: {"permitida": bool, "motivo": str | None}} para esta factura.
+
+    `hay_anticipos`: el cliente tiene anticipos por aplicar en la moneda de la
+    factura (Pagos recibidos). Una aplicación de anticipo cuenta como pago.
+    """
     e = fac.estado
     cobrable = e in COBRABLES and r2(fac.saldo) > 0
     libre = es_libre(fac, hay_pagos)
@@ -561,6 +536,10 @@ def acciones_permitidas(fac: ERPFacturaCliente, hay_pagos: bool) -> dict:
         "adjuntar": regla(True, None),
         "agregar_pago": regla(cobrable, sin_cambios or "La factura no tiene saldo por cobrar."),
         "cerrar_sin_pago": regla(cobrable, sin_cambios or "La factura no tiene saldo por cobrar."),
+        "aplicar_anticipo": regla(cobrable and hay_anticipos,
+                                  sin_cambios or ("La factura no tiene saldo por cobrar." if not cobrable
+                                                  else "El cliente no tiene anticipos por aplicar "
+                                                       "en la moneda de la factura.")),
         "nota_credito": regla(emitida, sin_cambios),
         "nota_debito": regla(emitida, sin_cambios),
         "editar_retenciones": regla(libre, sin_cambios or a_nota),
@@ -579,9 +558,19 @@ async def hay_pagos(db: AsyncSession, factura_id: int) -> bool:
         ERPPago.estado == EstadoPago.PROCESADO).limit(1))).first() is not None
 
 
+async def cliente_con_anticipos(db: AsyncSession, fac: ERPFacturaCliente) -> bool:
+    """El cliente de la factura tiene saldo a favor en la moneda de la factura."""
+    from app.core import erp_recibos
+    tercero = await erp_recibos.tercero_de_factura(db, fac)
+    if tercero is None:
+        return False
+    return r2((await erp_recibos.saldo_a_favor(db, tercero.id)).get(fac.moneda or "COP", 0)) > 0
+
+
 async def exigir_accion(db: AsyncSession, fac: ERPFacturaCliente, accion: str) -> None:
     """La guardia común: rechaza la acción si la matriz no la permite."""
-    regla = acciones_permitidas(fac, await hay_pagos(db, fac.id))[accion]
+    anticipos = await cliente_con_anticipos(db, fac) if accion == "aplicar_anticipo" else False
+    regla = acciones_permitidas(fac, await hay_pagos(db, fac.id), anticipos)[accion]
     if not regla["permitida"]:
         raise _rechazo(regla["motivo"], 409)
 

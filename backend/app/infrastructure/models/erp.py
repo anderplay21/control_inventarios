@@ -451,6 +451,11 @@ class ERPPago(Base, TimestampMixin):
     estado          = Column(Enum(EstadoPago), nullable=False, default=EstadoPago.PROGRAMADO)
     comprobante_id  = Column(Integer, ForeignKey("erp_comprobantes.id"), nullable=True)
     concepto        = Column(String(300), nullable=True)
+    # Pagos recibidos: el recibo de caja al que pertenece este cobro. Con
+    # origen ANTICIPO es la aplicación de un anticipo y el recibo es el del
+    # anticipo (sin cuenta bancaria: el dinero ya había entrado).
+    recibo_id       = Column(Integer, ForeignKey("erp_recibos_caja.id"), nullable=True)   # índice ix_epagos_recibo (main.py)
+    origen          = Column(String(20), nullable=False, default="RECIBO", server_default="RECIBO")
 
     factura_cliente   = relationship("ERPFacturaCliente", back_populates="pagos")
     factura_proveedor = relationship("ERPFacturaProveedor", back_populates="pagos")

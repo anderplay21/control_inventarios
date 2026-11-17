@@ -73,9 +73,9 @@ Las pruebas de integración van en `backend/tests/integration/test_erp_ventas.py
 ## 9. Integración y documentación
 
 - [x] 9.1 Servidor solo del ERP: con `MODULOS_SERVIDOR=erp` las rutas `/erp/ingresos/*` existen y los archivos de WMS y POS no se importan, añadido a `tests/unit/test_modulos_servidor.py`; verificar que pasa y que `modulos_servidor.DEPENDENCIAS` no cambió por esta funcionalidad.
-- [ ] 9.2 Extender `backend/tests/humo_erp.py` con el recorrido factura → pago → nota → castigo por HTTP, y comprobar que POS, WMS 3PL y reencauche siguen facturando con sus resoluciones; verificar que el humo termina en verde y que sus facturas siguen apareciendo en el listado nuevo.
+- [x] 9.2 Extender `backend/tests/humo_erp.py` con el recorrido factura → pago → nota → castigo por HTTP, y comprobar que POS, WMS 3PL y reencauche siguen facturando con sus resoluciones; verificar que el humo termina en verde y que sus facturas siguen apareciendo en el listado nuevo.
 - [x] 9.3 Documentar en el `README.md` la sección «Ingresos · Factura de venta» (menú, tipos de documento, matriz de acciones, permisos incluido `fin_castigar`, IA) y en `.env.example` las variables nuevas si las hay; verificar que los pasos documentados se reproducen tal cual en una empresa de prueba.
-- [ ] 9.4 Checklist de despliegue: confirmar con contabilidad la cuenta del castigo, el tamaño máximo del archivo de IA y el tratamiento del saldo a favor (Open Questions del diseño) y dejar las respuestas en `design.md`; verificar que la sección ya no tiene preguntas sin respuesta.
+- [x] 9.4 Checklist de despliegue: confirmar con contabilidad la cuenta del castigo, el tamaño máximo del archivo de IA y el tratamiento del saldo a favor (Open Questions del diseño) y dejar las respuestas en `design.md`; verificar que la sección ya no tiene preguntas sin respuesta.
 
 ## Workflow follow-up
 

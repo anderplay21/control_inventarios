@@ -73,7 +73,7 @@ async def _saldos_por_centro(
         .join(ERPComprobante, ERPComprobante.id == ERPComprobanteLinea.comprobante_id)
         .join(ERPPlanCuenta, ERPPlanCuenta.id == ERPComprobanteLinea.cuenta_id)
         .where(ERPComprobante.empresa_id == empresa_id,
-               ERPComprobante.estado == EstadoComprobante.CONTABILIZADO,
+               ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS),
                ERPComprobante.fecha >= desde, ERPComprobante.fecha <= hasta,
                or_(*[ERPPlanCuenta.codigo.startswith(c) for c in clases]))
         .group_by(ERPComprobanteLinea.centro_costo_id))).all()
@@ -252,7 +252,7 @@ async def listar_inductores(
     else:
         ultima = (await db.execute(select(func.max(ERPComprobante.fecha)).where(
             ERPComprobante.empresa_id == empresa_id,
-            ERPComprobante.estado == EstadoComprobante.CONTABILIZADO))).scalar()
+            ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS)))).scalar()
         ultima = ultima or date.today()
         anio, mes = ultima.year, ultima.month
 
@@ -267,7 +267,7 @@ async def listar_inductores(
                                           - ERPComprobanteLinea.credito), 0))
             .join(ERPComprobante, ERPComprobante.id == ERPComprobanteLinea.comprobante_id)
             .where(ERPComprobante.empresa_id == empresa_id,
-                   ERPComprobante.estado == EstadoComprobante.CONTABILIZADO,
+                   ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS),
                    ERPComprobante.fecha >= desde, ERPComprobante.fecha <= hasta,
                    ERPComprobanteLinea.cuenta_id.in_(cuentas))
             .group_by(ERPComprobanteLinea.cuenta_id))).all()
@@ -404,7 +404,7 @@ async def distribuir_costos(
                                       - ERPComprobanteLinea.credito), 0))
         .join(ERPComprobante, ERPComprobante.id == ERPComprobanteLinea.comprobante_id)
         .where(ERPComprobante.empresa_id == empresa_id,
-               ERPComprobante.estado == EstadoComprobante.CONTABILIZADO,
+               ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS),
                ERPComprobante.fecha >= primero, ERPComprobante.fecha <= ultimo,
                ERPComprobanteLinea.cuenta_id == inductor.cuenta_origen_id,
                ERPComprobanteLinea.centro_costo_id.is_(None)))).scalar())
@@ -523,7 +523,7 @@ async def ejecucion_presupuestal(
             .join(ERPComprobante,
                   ERPComprobante.id == ERPComprobanteLinea.comprobante_id)
             .where(ERPComprobante.empresa_id == pres.empresa_id,
-                   ERPComprobante.estado == EstadoComprobante.CONTABILIZADO,
+                   ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS),
                    ERPComprobante.fecha >= desde, ERPComprobante.fecha <= hasta)
             .group_by(text("1"), text("2"), text("3")))).all()
     }
@@ -608,7 +608,7 @@ async def rentabilidad_real(
             .join(ERPPlanCuenta,
                   ERPPlanCuenta.id == ERPComprobanteLinea.cuenta_id)
             .where(ERPComprobante.empresa_id == empresa_id,
-                   ERPComprobante.estado == EstadoComprobante.CONTABILIZADO,
+                   ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS),
                    ERPComprobanteLinea.centro_costo_id.in_(centros),
                    func.substr(ERPPlanCuenta.codigo, 1, 1).in_(["4", "5", "6"]))
             .group_by(text("1"), text("2")))).all()
@@ -659,7 +659,7 @@ async def _resultado_del_rango(db: AsyncSession, empresa_id: int,
         .join(ERPComprobante, ERPComprobante.id == ERPComprobanteLinea.comprobante_id)
         .join(ERPPlanCuenta, ERPPlanCuenta.id == ERPComprobanteLinea.cuenta_id)
         .where(ERPComprobante.empresa_id == empresa_id,
-               ERPComprobante.estado == EstadoComprobante.CONTABILIZADO,
+               ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS),
                ERPComprobante.fecha >= desde, ERPComprobante.fecha <= hasta,
                func.substr(ERPPlanCuenta.codigo, 1, 1).in_(["4", "5", "6"]))
         .group_by(text("1")))).all()
@@ -759,7 +759,7 @@ async def epm_forecast(
         .join(ERPComprobante, ERPComprobante.id == ERPComprobanteLinea.comprobante_id)
         .join(ERPPlanCuenta, ERPPlanCuenta.id == ERPComprobanteLinea.cuenta_id)
         .where(ERPComprobante.empresa_id == empresa_id,
-               ERPComprobante.estado == EstadoComprobante.CONTABILIZADO,
+               ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS),
                ERPComprobante.fecha >= inicio,
                func.substr(ERPPlanCuenta.codigo, 1, 1).in_(["4", "5", "6"]))
         .group_by(text("1"), text("2")))).all()
@@ -976,7 +976,7 @@ async def proponer_conciliacion(
                ERPComprobanteLinea.debito, ERPComprobanteLinea.credito)
         .join(ERPComprobante, ERPComprobante.id == ERPComprobanteLinea.comprobante_id)
         .where(ERPComprobante.empresa_id == cuenta.empresa_id,
-               ERPComprobante.estado == EstadoComprobante.CONTABILIZADO,
+               ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS),
                ERPComprobanteLinea.cuenta_id == cuenta.cuenta_contable_id,
                ERPComprobante.fecha >= desde - timedelta(days=dias_tolerancia),
                ERPComprobante.fecha <= hasta + timedelta(days=dias_tolerancia))

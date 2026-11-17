@@ -1299,6 +1299,10 @@ async def _migrar_esquema(esquema: str) -> None:
             ("erp_lineas_factura_cliente", "referencia", "VARCHAR(100)"),
             ("erp_lineas_factura_cliente", "item_id", "INTEGER"),
             ("erp_terceros", "es_vendedor", "BOOLEAN DEFAULT false NOT NULL"),
+            # ERP · Ingresos · Pagos recibidos: cada cobro pertenece a un recibo
+            # de caja; las tablas del recibo las crea `create_all` (ya corrió).
+            ("erp_pagos", "recibo_id", "INTEGER REFERENCES erp_recibos_caja(id)"),
+            ("erp_pagos", "origen", "VARCHAR(20) DEFAULT 'RECIBO' NOT NULL"),
             # Lubricación: el intervalo con que se programó cada cambio de
             # aceite, y con qué lubricante se hizo cada adición.
             ("eam_lube_carga", "intervalo_cambio", "DOUBLE PRECISION"),
@@ -2481,6 +2485,7 @@ async def _migrar_esquema(esquema: str) -> None:
             ("ix_efp_empresa_estado", "erp_facturas_proveedor",
              "(empresa_id, estado, fecha_vencimiento)"),
             ("ix_epagos_empresa_fecha", "erp_pagos", "(empresa_id, fecha)"),
+            ("ix_epagos_recibo", "erp_pagos", "(recibo_id)"),
             # La auditoría se consulta por documento.
             ("ix_eaud_entidad", "erp_auditoria", "(empresa_id, entidad, entidad_id)"),
             # CMMS · llantas. La historia de una llanta (inspecciones,
@@ -2560,6 +2565,27 @@ async def _migrar_esquema(esquema: str) -> None:
             await db.rollback()
             logging.getLogger("uvicorn.error").warning(
                 "No se pudo sembrar el núcleo contable en «%s»: %s", esquema, e)
+
+    # ── Pagos recibidos ──
+    #
+    # Los cobros registrados antes de existir los recibos de caja reciben uno,
+    # con su número original, para que el listado de Pagos recibidos los muestre.
+    # Idempotente: solo toma los cobros que todavía no tienen recibo.
+    async with AsyncSession(engine) as db:
+        await db.execute(text(f'SET search_path TO "{esquema}"'))
+        try:
+            from app.core import erp_recibos
+
+            hechos = await erp_recibos.agrupar_historicos(db)
+            await db.commit()
+            if hechos:
+                logging.getLogger("uvicorn.error").info(
+                    "Pagos recibidos en «%s»: %d cobros anteriores quedaron con su recibo.",
+                    esquema, hechos)
+        except Exception as e:   # noqa: BLE001
+            await db.rollback()
+            logging.getLogger("uvicorn.error").warning(
+                "No se pudieron agrupar los cobros anteriores en «%s»: %s", esquema, e)
 
 
 # Número arbitrario pero fijo: identifica este candado y nada más.

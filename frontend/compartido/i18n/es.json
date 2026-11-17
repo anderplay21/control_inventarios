@@ -212,7 +212,8 @@
       "rtmLiquidacion": "Liquidación",
       "rtmGarantias": "Garantías",
       "rtmIndicadores": "Indicadores",
-      "facturaVenta": "Factura de venta"
+      "facturaVenta": "Factura de venta",
+      "pagosRecibidos": "Pagos recibidos"
     },
     "section": {
       "principal": "Principal",

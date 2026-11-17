@@ -17,7 +17,7 @@ def _fac(estado, saldo="1000", dian="POR_TRANSMITIR", vence=HOY + timedelta(days
 
 
 SIEMPRE = {"imprimir", "descargar_pdf", "compartir", "clonar", "adjuntar"}
-DIFERIDAS = {"aplicar_anticipo", "volver_recurrente"}
+DIFERIDAS = {"volver_recurrente"}
 
 # Columnas de la tabla del diseño: (factura, hay_pagos) → acciones permitidas,
 # además de SIEMPRE.
@@ -60,6 +60,26 @@ def test_diferidas_siempre_deshabilitadas_con_proximamente():
         r = acciones_permitidas(fac, pagos)
         for a in DIFERIDAS:
             assert not r[a]["permitida"] and "Próximamente" in r[a]["motivo"], (nombre, a)
+
+
+def test_aplicar_anticipo_segun_saldo_a_favor():
+    """Habilitada solo si la factura es cobrable y el cliente tiene anticipos en
+    su moneda; si no, deshabilitada con el motivo."""
+    con = acciones_permitidas(_fac(E.EMITIDA), False, hay_anticipos=True)["aplicar_anticipo"]
+    sin = acciones_permitidas(_fac(E.EMITIDA), False, hay_anticipos=False)["aplicar_anticipo"]
+    cobrada = acciones_permitidas(_fac(E.PAGADA, saldo="0"), True, hay_anticipos=True)["aplicar_anticipo"]
+    anulada = acciones_permitidas(_fac(E.ANULADA), False, hay_anticipos=True)["aplicar_anticipo"]
+    assert con["permitida"] and con["motivo"] is None
+    assert not sin["permitida"] and "anticipos" in sin["motivo"]
+    assert not cobrada["permitida"] and "saldo" in cobrada["motivo"]
+    assert not anulada["permitida"] and "anulada" in anulada["motivo"]
+
+
+def test_anticipo_aplicado_cuenta_como_pago():
+    """Con un anticipo aplicado (hay pagos) la factura ya no se edita ni se anula."""
+    r = acciones_permitidas(_fac(E.PARCIALMENTE_PAGADA), True, hay_anticipos=True)
+    for a in ("editar", "convertir_borrador", "anular", "editar_retenciones"):
+        assert not r[a]["permitida"] and "pagos" in r[a]["motivo"], a
 
 
 @pytest.mark.parametrize("estado,saldo,vence,texto,vencida", [

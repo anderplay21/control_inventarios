@@ -1208,7 +1208,7 @@ async def listar_presupuestos(
                 FROM erp_comprobante_lineas l
                 JOIN erp_comprobantes c ON c.id = l.comprobante_id
                 JOIN erp_plan_cuentas pc ON pc.id = l.cuenta_id
-                WHERE c.estado = 'CONTABILIZADO'
+                WHERE c.estado IN ('CONTABILIZADO', 'ANULADO')
                   AND left(pc.codigo, 1) IN ('5', '6')
                   AND extract(year from c.fecha) = ANY(:anios)
                 GROUP BY 1, 2
@@ -1602,13 +1602,13 @@ async def config_numeraciones(db: AsyncSession = Depends(get_db), current_user: 
 # ── REPORTES ──────────────────────────────────────────────────────────────────
 
 async def _sum_lineas(db, anio, *, tipo=None, cod_like=None, signo=1, acumulado=False):
-    """Suma de líneas de comprobantes CONTABILIZADOS (libro mayor).
+    """Suma de líneas de los comprobantes en libros (libro mayor; ver ESTADOS_EN_LIBROS).
     signo +1 => débito-crédito (cuentas de naturaleza débito: activo/gasto);
     signo -1 => crédito-débito (pasivo/patrimonio/ingreso)."""
     expr = (func.sum(ERPComprobanteLinea.debito - ERPComprobanteLinea.credito) if signo > 0
             else func.sum(ERPComprobanteLinea.credito - ERPComprobanteLinea.debito))
     q = select(func.coalesce(expr, 0)).join(ERPComprobante).join(ERPPlanCuenta).where(
-        ERPComprobante.estado == EstadoComprobante.CONTABILIZADO
+        ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS)
     )
     if acumulado:
         q = q.where(func.substr(ERPComprobante.periodo, 1, 4) <= str(anio))

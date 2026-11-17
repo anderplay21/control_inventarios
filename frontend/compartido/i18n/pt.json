@@ -160,7 +160,8 @@
       "agsServicios": "Serviços",
       "agsEquipo": "Equipe",
       "catalogos": "Catálogos",
-      "facturaVenta": "Fatura de venda"
+      "facturaVenta": "Fatura de venda",
+      "pagosRecibidos": "Pagamentos recebidos"
     },
     "section": {
       "principal": "Principal",

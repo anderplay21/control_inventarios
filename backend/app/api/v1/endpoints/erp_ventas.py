@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import erp_permisos, erp_ventas
+from app.core.erp_recibos import AplicarAnticipoEntrada
 from app.core.database import get_db
 from app.infrastructure.models.erp import EstadoFactura
 from app.infrastructure.models.usuario import Usuario  # noqa: F401
@@ -159,6 +160,10 @@ class PagoVentaResponse(BaseModel):
     metodo_pago: Optional[str] = None
     referencia: Optional[str] = None
     comprobante_id: Optional[int] = None
+    # Pagos recibidos: el recibo de caja del cobro y si es un pago (RECIBO) o
+    # la aplicación de un anticipo (ANTICIPO).
+    recibo_id: Optional[int] = None
+    origen: str = "RECIBO"
 
 
 async def _factura(db: AsyncSession, factura_id: int):
@@ -333,6 +338,8 @@ class FacturaDetalle(FacturaListaItem):
     cerrada_por: Optional[str] = None
     retenciones_editadas: bool = False
     tiene_firma: bool = False
+    # Retenciones practicadas en los anticipos aplicados (solo informativas).
+    retenciones_anticipo: List[dict] = []
 
 
 async def detalle_de(db: AsyncSession, fac) -> FacturaDetalle:
@@ -353,6 +360,8 @@ async def detalle_de(db: AsyncSession, fac) -> FacturaDetalle:
     historial = (await db.execute(select(ERPFacturaClienteEvento).where(
         ERPFacturaClienteEvento.factura_id == fac.id).order_by(ERPFacturaClienteEvento.id))).scalars().all()
     res = await db.get(ERPResolucionFacturacion, fac.resolucion_id) if fac.resolucion_id else None
+    from app.core import erp_recibos
+    cobrable = fac.estado in erp_ventas.COBRABLES
     return FacturaDetalle(
         **_con_estado(fac).model_dump(),
         lineas=[LineaVentaResponse.model_validate(l) for l in lineas],
@@ -361,7 +370,9 @@ async def detalle_de(db: AsyncSession, fac) -> FacturaDetalle:
         adjuntos=[AdjuntoResumen.model_validate(a) for a in adjuntos],
         historial=[EventoResumen.model_validate(e) for e in historial],
         resolucion=ResolucionResumen.model_validate(res) if res else None,
-        acciones=erp_ventas.acciones_permitidas(fac, bool(pagos)),
+        acciones=erp_ventas.acciones_permitidas(
+            fac, bool(pagos), cobrable and await erp_ventas.cliente_con_anticipos(db, fac)),
+        retenciones_anticipo=await erp_recibos.retenciones_anticipo(db, fac.id),
         comprobante_id=fac.comprobante_id, cerrada_motivo=fac.cerrada_motivo,
         cerrada_por=fac.cerrada_por, retenciones_editadas=fac.retenciones_editadas,
         tiene_firma=bool(fac.firma))
@@ -484,6 +495,62 @@ async def retenciones(factura_id: int, datos: erp_ventas.RetencionesEntrada,
     fac = await _factura(db, factura_id)
     await _guardar(db, erp_ventas.editar_retenciones(db, fac, datos, quien(usuario)))
     return await detalle_de(db, fac)
+
+
+# ─── Anticipos (Pagos recibidos) ──────────────────────────────────────────────
+
+class AnticipoDisponible(BaseModel):
+    id: int
+    numero: str
+    fecha: date
+    moneda: str
+    valor_bruto: Decimal
+    saldo_por_aplicar: Decimal
+    tiene_retenciones: bool
+
+
+@router.get("/{factura_id}/anticipos", response_model=List[AnticipoDisponible])
+async def anticipos_de_la_factura(factura_id: int, db: AsyncSession = Depends(get_db),
+                                  usuario: Usuario = Depends(erp_permisos.ver_cartera)):
+    """Los anticipos del cliente que se pueden aplicar a esta factura."""
+    from app.core import erp_recibos
+    from app.infrastructure.models.erp_recibos import ERPReciboRetencion
+
+    fac = await _factura(db, factura_id)
+    tercero = await erp_recibos.tercero_de_factura(db, fac)
+    salida = []
+    for r in await erp_recibos.anticipos_por_aplicar(db, tercero.id if tercero else None,
+                                                      fac.moneda or "COP"):
+        con_ret = (await db.execute(select(ERPReciboRetencion.id).where(
+            ERPReciboRetencion.recibo_id == r.id).limit(1))).first() is not None
+        salida.append(AnticipoDisponible(id=r.id, numero=r.numero, fecha=r.fecha, moneda=r.moneda,
+                                         valor_bruto=r.valor_bruto, saldo_por_aplicar=r.saldo_por_aplicar,
+                                         tiene_retenciones=con_ret))
+    return salida
+
+
+@router.post("/{factura_id}/anticipos", response_model=FacturaDetalle, status_code=201)
+async def aplicar_anticipo(factura_id: int, datos: AplicarAnticipoEntrada,
+                           db: AsyncSession = Depends(get_db),
+                           usuario: Usuario = Depends(erp_permisos.registrar_pagos)):
+    """«Aplicar anticipo»: cruza el saldo a favor del cliente contra la factura.
+    Responde 409 con la advertencia si las retenciones podrían duplicarse; se
+    reenvía con `confirmar_retenciones` para aplicar de todos modos."""
+    from app.core import erp_recibos
+    fac = await _factura(db, factura_id)
+    await erp_ventas.exigir_accion(db, fac, "aplicar_anticipo")
+    await _guardar(db, erp_recibos.aplicar_anticipo(db, fac, datos, quien(usuario)))
+    return await detalle_de(db, await _factura(db, factura_id))
+
+
+@router.post("/{factura_id}/anticipos/{pago_id}/desaplicar", response_model=FacturaDetalle)
+async def desaplicar_anticipo(factura_id: int, pago_id: int, datos: MotivoEntrada,
+                              db: AsyncSession = Depends(get_db),
+                              usuario: Usuario = Depends(erp_permisos.registrar_pagos)):
+    from app.core import erp_recibos
+    fac = await _factura(db, factura_id)
+    await _guardar(db, erp_recibos.desaplicar_anticipo(db, fac, pago_id, datos.motivo, quien(usuario)))
+    return await detalle_de(db, await _factura(db, factura_id))
 
 
 @router.post("/{factura_id}/castigar", response_model=FacturaDetalle)

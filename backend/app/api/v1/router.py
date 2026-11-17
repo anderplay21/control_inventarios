@@ -26,6 +26,8 @@ RUTAS = (
     ("erp_gestion", "router", "erp"),
     # Ingresos · Factura de venta (/erp/ingresos/facturas).
     ("erp_ventas", "router", "erp"),
+    # Ingresos · Pagos recibidos (/erp/ingresos/pagos-recibidos).
+    ("erp_recibos", "router", "erp"),
     ("auth", "router", None),
     ("movil", "router", "eam"),
     # Consola del operador: administra OTRAS empresas, no la propia.

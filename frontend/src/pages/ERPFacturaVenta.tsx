@@ -17,7 +17,7 @@ import {
   Edit, ContentCopy, AttachFile, Block, Undo, Gavel, NoteAdd, Percent, Send, Draw,
 } from '@mui/icons-material'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { apiClient } from '@/api/client'
 import { Layout } from '@/components/layout/Layout'
@@ -53,7 +53,9 @@ interface FacturaDetalle extends FacturaFila {
   cufe?: string | null; remision?: string | null; concepto?: string | null
   observaciones?: string | null; notas_adicionales?: string | null
   lineas: LineaDet[]
-  pagos: { id: number; numero: string; fecha: string; monto: string; metodo_pago?: string | null }[]
+  pagos: { id: number; numero: string; fecha: string; monto: string; metodo_pago?: string | null
+    recibo_id?: number | null; origen?: 'RECIBO' | 'ANTICIPO' }[]
+  retenciones_anticipo?: { recibo_id: number; recibo_numero: string; tipo: string; concepto?: string | null; valor: string }[]
   notas: { id: number; tipo: string; numero: string; fecha: string; motivo: string; total: string }[]
   adjuntos: { id: number; nombre: string; created_at: string; subido_por?: string | null }[]
   historial: { id: number; tipo: string; detalle?: string | null; usuario?: string | null; created_at: string }[]
@@ -605,11 +607,17 @@ function FormularioFactura({ editar, onClose, onGuardada }: {
 
 // ── Detalle ───────────────────────────────────────────────────────────────────
 type Dialogo = null | 'pago' | 'editar' | 'nota_credito' | 'nota_debito' | 'retenciones'
-  | 'cerrar_sin_pago' | 'convertir_borrador' | 'anular'
+  | 'cerrar_sin_pago' | 'convertir_borrador' | 'anular' | 'anticipo'
+
+const NOMBRE_RETENCION: Record<string, string> = {
+  RETEFUENTE: 'Retención en la fuente', RETEIVA: 'Retención de IVA', RETEICA: 'Retención de ICA',
+}
 
 function DetalleFactura({ id, onClose, onAbrir }: { id: number; onClose: () => void; onAbrir: (id: number) => void }) {
   const qc = useQueryClient()
+  const navegar = useNavigate()
   const [dialogo, setDialogo] = useState<Dialogo>(null)
+  const [desaplicar, setDesaplicar] = useState<number | null>(null)
   const [comentario, setComentario] = useState('')
   const det = useQuery({ queryKey: ['factura-venta', id],
     queryFn: () => apiClient.get(`${API}/${id}`).then(r => r.data as FacturaDetalle) })
@@ -624,7 +632,7 @@ function DetalleFactura({ id, onClose, onAbrir }: { id: number; onClose: () => v
       refrescar()
       if (v.ruta === 'clonar') { toast.success('Borrador creado'); onAbrir(r.data.id) }
       else toast.success('Listo')
-      setDialogo(null); setComentario('')
+      setDialogo(null); setDesaplicar(null); setComentario('')
     },
     onError: e => toast.error(mensajeDeError(e)),
   })
@@ -679,7 +687,7 @@ function DetalleFactura({ id, onClose, onAbrir }: { id: number; onClose: () => v
             {boton('descargar_pdf', 'Descargar PDF', <PictureAsPdf />, () => abrirPdf(id, d.numero, 'descargar'))}
             {boton('compartir', 'Compartir', <Share />, compartir)}
             {boton('agregar_pago', 'Agregar pago', <Payments />, () => setDialogo('pago'))}
-            {boton('aplicar_anticipo', 'Aplicar anticipo', <Payments />, () => undefined)}
+            {boton('aplicar_anticipo', 'Aplicar anticipo', <Payments />, () => setDialogo('anticipo'))}
             {boton('cerrar_sin_pago', 'Cerrar sin pago', <Gavel />, () => setDialogo('cerrar_sin_pago'))}
             {boton('nota_credito', 'Nota crédito', <NoteAdd />, () => setDialogo('nota_credito'))}
             {boton('nota_debito', 'Nota débito', <NoteAdd />, () => setDialogo('nota_debito'))}
@@ -721,7 +729,31 @@ function DetalleFactura({ id, onClose, onAbrir }: { id: number; onClose: () => v
           </Box>
 
           {d.pagos.length > 0 && <Seccion titulo="Pagos">{d.pagos.map(p => (
-            <Typography key={p.id} variant="body2">{p.fecha} · {p.numero} · {plata(p.monto, d.moneda ?? 'COP')} {p.metodo_pago ? `· ${p.metodo_pago}` : ''}</Typography>))}</Seccion>}
+            <Box key={p.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="body2">
+                {p.fecha} ·{' '}
+                {p.recibo_id ? (
+                  <Box component="a" href={`/erp/ingresos/pagos-recibidos?recibo=${p.recibo_id}`}
+                    onClick={(e: React.MouseEvent) => { e.preventDefault(); navegar(`/erp/ingresos/pagos-recibidos?recibo=${p.recibo_id}`) }}
+                    sx={{ color: ERP_COLOR, fontWeight: 600 }} data-prueba="enlace-recibo">{p.numero}</Box>
+                ) : p.numero}
+                {' '}· {plata(p.monto, d.moneda ?? 'COP')} {p.metodo_pago && p.origen !== 'ANTICIPO' ? `· ${p.metodo_pago}` : ''}
+              </Typography>
+              {p.origen === 'ANTICIPO' && <Chip size="small" label="Anticipo aplicado" sx={{ height: 20 }} />}
+              {p.origen === 'ANTICIPO' && d.estado !== 'ANULADA' && d.estado !== 'CASTIGADA' && (
+                <Button size="small" startIcon={<Undo />} onClick={() => setDesaplicar(p.id)}
+                  data-prueba="desaplicar-anticipo">Desaplicar</Button>
+              )}
+            </Box>))}</Seccion>}
+          {(d.retenciones_anticipo ?? []).length > 0 && <Seccion titulo="Retenciones practicadas en anticipos">
+            {d.retenciones_anticipo!.map((r, i) => (
+              <Typography key={i} variant="body2">
+                {NOMBRE_RETENCION[r.tipo] ?? r.tipo}{r.concepto ? ` (${r.concepto})` : ''} · {plata(r.valor, d.moneda ?? 'COP')} · anticipo {r.recibo_numero}
+              </Typography>))}
+            <Typography variant="caption" sx={{ color: '#64748B' }}>
+              Se contabilizaron al recibir el anticipo: no vuelven a restar del saldo.
+            </Typography>
+          </Seccion>}
           {d.notas.length > 0 && <Seccion titulo="Notas crédito y débito">{d.notas.map(n => (
             <Typography key={`${n.tipo}${n.id}`} variant="body2">{n.fecha} · {n.tipo === 'CREDITO' ? 'Crédito' : 'Débito'} {n.numero} · {plata(n.total, d.moneda ?? 'COP')} · {n.motivo}</Typography>))}</Seccion>}
           {d.adjuntos.length > 0 && <Seccion titulo="Adjuntos">{d.adjuntos.map(a => (
@@ -761,6 +793,13 @@ function DetalleFactura({ id, onClose, onAbrir }: { id: number; onClose: () => v
           onConfirmar={cuerpo => accion.mutate({ ruta: dialogo === 'nota_credito' ? 'notas-credito' : 'notas-debito', cuerpo })} />
       )}
       {d && dialogo === 'retenciones' && <RetencionesDialog factura={d} onClose={() => setDialogo(null)} onGuardado={refrescar} />}
+      {d && dialogo === 'anticipo' && <AnticipoDialog factura={d} onClose={() => setDialogo(null)} onAplicado={refrescar} />}
+      {d && desaplicar && (
+        <MotivoDialog titulo="Desaplicar anticipo"
+          aviso="Se reversa el asiento de la aplicación: la factura recupera ese saldo y el anticipo vuelve a quedar por aplicar."
+          ocupado={accion.isPending} onClose={() => setDesaplicar(null)}
+          onConfirmar={motivo => accion.mutate({ ruta: `anticipos/${desaplicar}/desaplicar`, cuerpo: { motivo } })} />
+      )}
     </Drawer>
   )
 }
@@ -851,6 +890,81 @@ function RetencionesDialog({ factura, onClose, onGuardado }: { factura: FacturaD
       <DialogActions>
         <Button onClick={onClose}>Cancelar</Button>
         <Button variant="contained" disabled={!v || guardar.isPending} onClick={() => guardar.mutate()}>Guardar</Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
+// ── Aplicar anticipo ──────────────────────────────────────────────────────────
+interface AnticipoDisponible {
+  id: number; numero: string; fecha: string; moneda: string
+  valor_bruto: string; saldo_por_aplicar: string; tiene_retenciones: boolean
+}
+
+function AnticipoDialog({ factura, onClose, onAplicado }: { factura: FacturaDetalle; onClose: () => void; onAplicado: () => void }) {
+  const moneda = factura.moneda ?? 'COP'
+  const lista = useQuery({ queryKey: ['anticipos-factura', factura.id],
+    queryFn: () => apiClient.get(`${API}/${factura.id}/anticipos`).then(r => r.data as AnticipoDisponible[]) })
+  const [elegido, setElegido] = useState<number | ''>('')
+  const [valor, setValor] = useState('')
+  const [advertencia, setAdvertencia] = useState<string | null>(null)
+  const anticipo = (lista.data ?? []).find(a => a.id === elegido)
+  const maximo = anticipo ? Math.min(Number(factura.saldo), Number(anticipo.saldo_por_aplicar)) : 0
+  const elegir = (id: number) => {
+    setElegido(id); setAdvertencia(null)
+    const a = (lista.data ?? []).find(x => x.id === id)
+    if (a) setValor(String(r2(Math.min(Number(factura.saldo), Number(a.saldo_por_aplicar)))))
+  }
+  const aplicar = useMutation({
+    mutationFn: (confirmar: boolean) => apiClient.post(`${API}/${factura.id}/anticipos`, {
+      recibo_id: elegido, monto: valor, confirmar_retenciones: confirmar }),
+    onSuccess: () => { toast.success('Anticipo aplicado'); onAplicado(); onClose() },
+    onError: (e: unknown) => {
+      const r = (e as { response?: { status?: number; data?: { detail?: unknown } } }).response
+      // El servidor avisa (409) si las retenciones podrían quedar dos veces: se
+      // muestra el aviso y se pide confirmar en vez de tratarlo como error.
+      if (r?.status === 409 && typeof r.data?.detail === 'string' && r.data.detail.includes('confirme')) {
+        setAdvertencia(r.data.detail)
+      } else toast.error(mensajeDeError(e))
+    },
+  })
+  return (
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth aria-labelledby="titulo-anticipo">
+      <DialogTitle id="titulo-anticipo">Aplicar anticipo · {factura.numero}</DialogTitle>
+      <DialogContent>
+        {lista.isLoading ? <LinearProgress /> : (
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2" sx={{ color: '#64748B' }}>
+              Saldo de la factura: {plata(factura.saldo, moneda)}. El valor aplicado sale de la cuenta de anticipos
+              y baja la cartera; el banco no se mueve.
+            </Typography>
+            <FormControl required>
+              <InputLabel id="campo-anticipo">Anticipo</InputLabel>
+              <Select labelId="campo-anticipo" label="Anticipo" value={elegido} onChange={e => elegir(e.target.value as number)}
+                inputProps={{ 'data-prueba': 'anticipo-elegido' }}>
+                {(lista.data ?? []).map(a => (
+                  <MenuItem key={a.id} value={a.id}>
+                    {a.numero} · {a.fecha} · por aplicar {plata(a.saldo_por_aplicar, a.moneda)}{a.tiene_retenciones ? ' · con retenciones' : ''}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField label="Valor a aplicar" type="number" value={valor} onChange={e => { setValor(e.target.value); setAdvertencia(null) }}
+              helperText={anticipo ? `Máximo ${plata(maximo, moneda)}` : ' '} inputProps={{ 'data-prueba': 'anticipo-valor' }} />
+            {advertencia && <Alert severity="warning">{advertencia}</Alert>}
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancelar</Button>
+        {advertencia ? (
+          <Button variant="contained" color="warning" disabled={aplicar.isPending} onClick={() => aplicar.mutate(true)}>
+            Aplicar de todos modos
+          </Button>
+        ) : (
+          <Button variant="contained" disabled={aplicar.isPending || !elegido || !(Number(valor) > 0)}
+            onClick={() => aplicar.mutate(false)} data-prueba="confirmar-anticipo">Aplicar</Button>
+        )}
       </DialogActions>
     </Dialog>
   )

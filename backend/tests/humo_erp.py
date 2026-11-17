@@ -44,7 +44,14 @@ class UsuarioFalso:
 async def _db():
     async with AsyncSessionLocal(info={"esquema": ESQUEMA}) as s:
         await s.execute(text('SET search_path TO "%s"' % ESQUEMA))
-        yield s
+        # Como el get_db de verdad: confirma al final. Los endpoints que no hacen
+        # commit propio (WMS) perderían lo escrito si la prueba no lo hiciera.
+        try:
+            yield s
+            await s.commit()
+        except Exception:
+            await s.rollback()
+            raise
 
 
 # El token es de verdad y va firmado con la clave de la instancia: hay una
@@ -201,6 +208,145 @@ async def principal():
                     fallos.append("el castigo no dejó la factura castigada en cero")
             revisar("GET  /erp/ingresos/facturas/{id}/pdf",
                     await c.get(API + "/erp/ingresos/facturas/%s/pdf" % fid))
+
+        # ── Ingresos · Pagos recibidos: anticipo → factura → aplicar → pagar el
+        #    resto → anular → otro ingreso con retención ──
+        PR = API + "/erp/ingresos/pagos-recibidos"
+
+        async def saldo_banco():
+            rc = await c.get(API + "/erp/tesoreria/cuentas")
+            fila = next((x for x in rc.json() if x["id"] == cuenta_id), {}) if rc.status_code == 200 else {}
+            return float(fila.get("saldo_contable") or 0)
+
+        async def saldo_cuenta(codigo):
+            """Saldo débito − crédito de una cuenta del PUC según el balance de prueba."""
+            rb = await c.get(API + "/erp/contabilidad/balance-comprobacion",
+                             params={"empresa_id": eid, "hasta": hoy})
+            fila = next((x for x in rb.json()["filas"] if x["codigo"] == codigo), {}) if rb.status_code == 200 else {}
+            return float(fila.get("saldo_final_debito") or 0) - float(fila.get("saldo_final_credito") or 0)
+
+        rc = revisar("GET  /pagos-recibidos/clientes", await c.get(PR + "/clientes", params={"buscar": "800197268"}))
+        tid = rc.json()[0]["id"] if rc.status_code == 200 and rc.json() else None
+        if tid is None:
+            fallos.append("no se encontró el tercero de humo para Pagos recibidos")
+        else:
+            banco_antes = await saldo_banco()
+            anticipos_antes, cartera_antes = await saldo_cuenta("280505"), await saldo_cuenta("130505")
+            ra = revisar("POST /pagos-recibidos (anticipo)", await c.post(PR, json={
+                "tipo_ingreso": "ANTICIPO", "tercero_id": tid, "cuenta_bancaria_id": cuenta_id,
+                "fecha": hoy, "valor": 400000, "notas_adicionales": "Anticipo de humo"}), (201,))
+            rf = revisar("POST /erp/ingresos/facturas (para el anticipo)", await c.post(
+                API + "/erp/ingresos/facturas", json={
+                    "empresa_id": eid, "cliente_identificacion": "800197268",
+                    "cliente_nombre": "Tercero de humo", "fecha": hoy,
+                    "lineas": [{"descripcion": "Servicio anticipado", "cantidad": 1,
+                                "precio_unitario": 1000000}]}), (201,))
+            if ra.status_code == 201 and rf.status_code == 201:
+                aid, fid2 = ra.json()["id"], rf.json()["id"]
+                det = (await c.get(API + "/erp/ingresos/facturas/%s" % fid2)).json()
+                if not det["acciones"]["aplicar_anticipo"]["permitida"]:
+                    fallos.append("«Aplicar anticipo» no se habilitó con saldo a favor")
+                revisar("POST /erp/ingresos/facturas/{id}/anticipos", await c.post(
+                    API + "/erp/ingresos/facturas/%s/anticipos" % fid2,
+                    json={"recibo_id": aid, "monto": 400000}), (201,))
+                saldo = float((await c.get(API + "/erp/ingresos/facturas/%s" % fid2)).json()["saldo"])
+                rp = revisar("POST /pagos-recibidos (pago del resto)", await c.post(PR, json={
+                    "tipo_ingreso": "PAGO_FACTURA", "tercero_id": tid, "cuenta_bancaria_id": cuenta_id,
+                    "fecha": hoy, "facturas": [{"factura_id": fid2, "monto": saldo}]}), (201,))
+                det = (await c.get(API + "/erp/ingresos/facturas/%s" % fid2)).json()
+                if det["estado"] != "PAGADA" or float(det["saldo"]) != 0:
+                    fallos.append("anticipo + recibo no dejaron la factura cobrada")
+                ant = (await c.get(PR + "/%s" % aid)).json()
+                if ant["estado"] != "APLICADO" or float(ant["saldo_por_aplicar"]) != 0:
+                    fallos.append("el anticipo no quedó aplicado del todo")
+                if rp.status_code == 201:
+                    revisar("POST /pagos-recibidos/{id}/anular", await c.post(
+                        PR + "/%s/anular" % rp.json()["id"], json={"motivo": "Anulación de humo"}))
+                    det = (await c.get(API + "/erp/ingresos/facturas/%s" % fid2)).json()
+                    if abs(float(det["saldo"]) - saldo) > 0.005:
+                        fallos.append("anular el recibo no devolvió el saldo a la factura")
+                revisar("POST /pagos-recibidos/{id}/anular (anticipo aplicado: rechazado)", await c.post(
+                    PR + "/%s/anular" % aid, json={"motivo": "humo"}), (409,))
+                # El banco: entró el anticipo; el pago del resto entró y salió al anularlo.
+                if abs(await saldo_banco() - banco_antes - 400000) > 0.005:
+                    fallos.append("el saldo contable de la cuenta no cuadra con los recibos")
+                # Anticipo aplicado completo: la 280505 vuelve a quedar como estaba.
+                if abs(await saldo_cuenta("280505") - anticipos_antes) > 0.005:
+                    fallos.append("la cuenta de anticipos 280505 no quedó en cero tras aplicarlo")
+                # La cartera queda con lo que la factura debe tras el anticipo y la anulación.
+                if abs(await saldo_cuenta("130505") - cartera_antes - saldo) > 0.005:
+                    fallos.append("la cartera 130505 no cuadra con el saldo de la factura")
+            rk = revisar("GET  /pagos-recibidos/cuentas-contables",
+                         await c.get(PR + "/cuentas-contables", params={"buscar": "421005"}))
+            if rk.status_code == 200 and rk.json():
+                ro = revisar("POST /pagos-recibidos (otro ingreso con retención)", await c.post(PR, json={
+                    "tipo_ingreso": "OTROS", "tercero_id": tid, "cuenta_bancaria_id": cuenta_id, "fecha": hoy,
+                    "lineas": [{"cuenta_id": rk.json()[0]["id"], "descripcion": "Intereses", "valor": 1000000}],
+                    "retenciones": [{"tipo": "RETEFUENTE", "concepto": "Servicios generales",
+                                     "porcentaje": 4}]}), (201,))
+                if ro.status_code == 201 and float(ro.json()["valor_neto"]) != 960000:
+                    fallos.append("el otro ingreso no descontó la retención")
+                if ro.status_code == 201:
+                    revisar("GET  /pagos-recibidos/{id}/pdf", await c.get(PR + "/%s/pdf" % ro.json()["id"]))
+            rl = revisar("GET  /pagos-recibidos (filtros)", await c.get(PR, params={
+                "identificacion": "800197268", "estado": "ANULADO", "limite": 5}))
+            if rl.status_code == 200 and not rl.json():
+                fallos.append("el filtro de recibos anulados no encontró el anulado")
+
+        # ── Otros módulos siguen facturando: WMS 3PL por su endpoint, y las
+        #    facturas de POS, WMS, 3PL y reencauche se ven en el listado nuevo ──
+        rd = revisar("GET  /wms/depositantes", await c.get(API + "/wms/depositantes"))
+        dep = next((x for x in rd.json() if x.get("codigo") == "HUMO3PL"), None) if rd.status_code == 200 else None
+        if dep is None and rd.status_code == 200:
+            dep = revisar("POST /wms/depositantes", await c.post(API + "/wms/depositantes", json={
+                "codigo": "HUMO3PL", "nombre": "Depositante de humo", "nit": "900555111"}), (201,)).json()
+        if dep:
+            revisar("PUT  /wms/3pl/tarifas (mínimo mensual)", await c.put(
+                API + "/wms/3pl/tarifas", params={"depositante_id": dep["id"]},
+                json=[{"concepto": "MINIMO_MES", "valor": 300000, "iva_pct": 19}]))
+            # Un mes cerrado que no esté liquidado todavía: cada corrida toma el anterior libre.
+            fin = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
+            rl3 = None
+            for _ in range(36):
+                inicio = fin.replace(day=1)
+                rl3 = await c.post(API + "/wms/3pl/liquidaciones", json={
+                    "depositante_id": dep["id"], "desde": inicio.isoformat(), "hasta": fin.isoformat()})
+                if rl3.status_code != 409:
+                    break
+                fin = inicio - datetime.timedelta(days=1)
+            revisar("POST /wms/3pl/liquidaciones", rl3, (201,))
+            if rl3.status_code == 201:
+                rf3 = revisar("POST /wms/3pl/liquidaciones/{id}/facturar",
+                              await c.post(API + "/wms/3pl/liquidaciones/%s/facturar" % rl3.json()["id"]))
+                if rf3.status_code == 200 and not rf3.json().get("factura_id"):
+                    fallos.append("la liquidación 3PL no quedó con su factura")
+
+        # La factura de cada origen se abre en la pantalla nueva con la resolución
+        # de su tipo (POS con la de POS, el resto con la de factura de venta) y
+        # aparece en el listado al buscarla por número.
+        async with AsyncSessionLocal() as s:
+            await s.execute(text('SET search_path TO "%s"' % ESQUEMA))
+            filas = (await s.execute(text(
+                "SELECT DISTINCT ON (f.origen) f.id, f.numero, f.origen, r.tipo_documento, r.prefijo "
+                "FROM erp_facturas_cliente f JOIN erp_resolucion_facturacion r ON r.id = f.resolucion_id "
+                "WHERE f.origen IN ('POS', 'WMS', 'WMS_3PL', 'REENCAUCHE') ORDER BY f.origen, f.id DESC"))).all()
+        vistos = {f.origen for f in filas}
+        for faltante in sorted({"WMS_3PL"} - vistos):
+            fallos.append("no hay factura de %s: el módulo no facturó" % faltante)
+        for otro in sorted({"POS", "WMS", "REENCAUCHE"} - vistos):
+            print("      sin facturas de %s en esta base (corra humo_reencauche.py antes para cubrirlo)" % otro)
+        for f in filas:
+            esperado = "POS" if f.origen == "POS" else "FACTURA_VENTA"
+            if f.tipo_documento != esperado:
+                fallos.append("la factura %s de %s usó una resolución %s" % (f.numero, f.origen, f.tipo_documento))
+            det = revisar("GET  /erp/ingresos/facturas/{id} (%s)" % f.origen,
+                          await c.get(API + "/erp/ingresos/facturas/%s" % f.id))
+            if det.status_code == 200 and (det.json().get("resolucion") or {}).get("prefijo") != f.prefijo:
+                fallos.append("el detalle de %s no muestra la resolución %s" % (f.numero, f.prefijo))
+            rb = revisar("GET  /erp/ingresos/facturas?buscar (%s)" % f.origen,
+                         await c.get(API + "/erp/ingresos/facturas", params={"buscar": f.numero}))
+            if rb.status_code == 200 and f.id not in [x["id"] for x in rb.json()]:
+                fallos.append("la factura %s de %s no aparece en el listado nuevo" % (f.numero, f.origen))
 
         # ── Libros ──
         revisar("GET  /erp/contabilidad/balance-comprobacion",

@@ -303,6 +303,7 @@ const ERPCxC = React.lazy(() => import('@/pages/ERPCxC'))
 const ERPCxP = React.lazy(() => import('@/pages/ERPCxP'))
 const ERPFacturacion = React.lazy(() => import('@/pages/ERPFacturacion'))
 const ERPFacturaVenta = React.lazy(() => import('@/pages/ERPFacturaVenta'))
+const ERPPagosRecibidos = React.lazy(() => import('@/pages/ERPPagosRecibidos'))
 const ERPTributacion = React.lazy(() => import('@/pages/ERPTributacion'))
 const ERPPresupuestos = React.lazy(() => import('@/pages/ERPPresupuestos'))
 const ERPCosteo = React.lazy(() => import('@/pages/ERPCosteo'))
@@ -759,6 +760,7 @@ export default function App() {
             <Route path="/erp/terceros" element={<ProtectedRoute><ERPTerceros /></ProtectedRoute>} />
             <Route path="/erp/tesoreria" element={<ProtectedRoute><ERPTesoreria /></ProtectedRoute>} />
             <Route path="/erp/ingresos/factura-venta" element={<ProtectedRoute><ERPFacturaVenta /></ProtectedRoute>} />
+            <Route path="/erp/ingresos/pagos-recibidos" element={<ProtectedRoute><ERPPagosRecibidos /></ProtectedRoute>} />
             <Route path="/erp/cxc" element={<ProtectedRoute><ERPCxC /></ProtectedRoute>} />
             <Route path="/erp/cxp" element={<ProtectedRoute><ERPCxP /></ProtectedRoute>} />
             <Route path="/erp/facturacion" element={<ProtectedRoute><ERPFacturacion /></ProtectedRoute>} />

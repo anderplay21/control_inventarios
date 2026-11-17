@@ -24,7 +24,7 @@ cuentas por REGLA en vez de tenerlas escritas en el código, y deja constancia e
 la auditoría.
 """
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -155,6 +155,24 @@ async def exigir_periodo_abierto(db: AsyncSession, empresa_id: int,
     return periodo
 
 
+def hoy_colombia() -> date:
+    """Fecha de Bogotá (UTC-5, sin horario de verano).
+
+    La fecha UTC ya es «mañana» desde las 7 p. m.: una anulación hecha esa
+    noche quedaba con fecha del día siguiente y, el último día del mes, en el
+    período siguiente.
+    """
+    return (datetime.now(timezone.utc) - timedelta(hours=5)).date()
+
+
+# ─── Qué cuenta en los libros ─────────────────────────────────────────────────
+# Un comprobante ANULADO sigue en los libros: `reversar` lo deja con ese estado
+# y asienta su contrario, CONTABILIZADO. Los dos juntos suman cero. Si un saldo
+# contara solo los CONTABILIZADOS, tomaría la reversión sin el original y cada
+# anulación quedaría contada dos veces. Solo el BORRADOR queda por fuera.
+ESTADOS_EN_LIBROS = (EstadoComprobante.CONTABILIZADO, EstadoComprobante.ANULADO)
+
+
 # ─── Consecutivos ─────────────────────────────────────────────────────────────
 
 PREFIJOS = {
@@ -165,7 +183,8 @@ PREFIJOS = {
 
 
 async def siguiente_numero(db: AsyncSession, empresa_id: int,
-                           tipo: TipoComprobante, anio: int) -> str:
+                           tipo: Optional[TipoComprobante], anio: int,
+                           prefijo: Optional[str] = None) -> str:
     """El consecutivo del comprobante, sin carreras y en tiempo constante.
 
     El número lleva el año porque los consecutivos contables se reinician cada
@@ -182,7 +201,9 @@ async def siguiente_numero(db: AsyncSession, empresa_id: int,
     O(1) y el propio bloqueo de fila serializa a quienes numeran el mismo
     talonario, sin cerrojo aparte y sin estorbar a los demás.
     """
-    prefijo = PREFIJOS.get(tipo, "CD")
+    # Un talonario que no es de comprobantes (el de recibos de caja, «RCJ») pasa
+    # su prefijo explícito y comparte la misma mecánica.
+    prefijo = prefijo or PREFIJOS.get(tipo, "CD")
 
     # `ON CONFLICT DO NOTHING` para el primer comprobante del talonario; dos
     # peticiones simultáneas ahí no chocan, y la de después toma el bloqueo.
@@ -376,7 +397,7 @@ async def reversar(db: AsyncSession, comprobante_id: int, usuario: str,
     if not lineas:
         raise ErrorContable("Ese comprobante no tiene líneas que reversar.")
 
-    hoy = datetime.now(timezone.utc).date()
+    hoy = hoy_colombia()
     await exigir_periodo_abierto(db, original.empresa_id, hoy)
 
     contrarias = [
@@ -507,6 +528,22 @@ NATURALEZA_POR_EVENTO: Dict[str, tuple] = {
     "RECAUDO_CLIENTE": (TipoComprobante.INGRESO, {
         "banco": "D", "caja": "D", "cartera": "C",
         "descuento": "D", "retefuente": "D",
+    }),
+    # Pagos recibidos. El anticipo es un pasivo: el dinero entra pero todavía
+    # no es venta. Se convierte en cobro de cartera al aplicarlo a una factura,
+    # y la venta la reconoce la factura, nunca el anticipo.
+    "ANTICIPO_CLIENTE": (TipoComprobante.INGRESO, {
+        "banco": "D", "caja": "D", "retefuente": "D", "reteiva": "D", "reteica": "D",
+        "anticipo": "C",
+    }),
+    # Dinero que no viene de una venta. La cuenta del crédito la elige quien
+    # registra (`contrapartida` va siempre con `cuenta_id`).
+    "OTRO_INGRESO": (TipoComprobante.INGRESO, {
+        "banco": "D", "caja": "D", "retefuente": "D", "reteiva": "D", "reteica": "D",
+        "contrapartida": "C",
+    }),
+    "APLICACION_ANTICIPO": (TipoComprobante.DIARIO, {
+        "anticipo": "D", "cartera": "C",
     }),
     "PAGO_PROVEEDOR": (TipoComprobante.EGRESO, {
         "proveedor": "D", "banco": "C", "caja": "C", "descuento": "C",

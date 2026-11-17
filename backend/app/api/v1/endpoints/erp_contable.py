@@ -284,7 +284,7 @@ async def listar_periodos(
                func.coalesce(func.sum(ERPComprobante.total_debito), 0),
                func.coalesce(func.sum(ERPComprobante.total_credito), 0))
         .where(ERPComprobante.empresa_id == empresa_id,
-               ERPComprobante.estado == EstadoComprobante.CONTABILIZADO)
+               ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS))
         .group_by(ERPComprobante.periodo))
     movimiento = {p: (c, float(d), float(cr)) for p, c, d, cr in r.all()}
 
@@ -677,7 +677,7 @@ async def _saldos(db: AsyncSession, empresa_id: int, hasta: date,
     """Débitos y créditos por cuenta en un rango, de una sola consulta."""
     condiciones = [
         ERPComprobante.empresa_id == empresa_id,
-        ERPComprobante.estado == EstadoComprobante.CONTABILIZADO,
+        ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS),
         ERPComprobante.fecha <= hasta,
     ]
     if desde:
@@ -804,7 +804,7 @@ async def libro_mayor(
 
     filtro = [ERPComprobanteLinea.cuenta_id == cuenta_id,
               ERPComprobante.empresa_id == empresa_id,
-              ERPComprobante.estado == EstadoComprobante.CONTABILIZADO,
+              ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS),
               ERPComprobante.fecha >= desde, ERPComprobante.fecha <= hasta]
 
     total = (await db.execute(
@@ -882,7 +882,7 @@ async def libro_diario(
     comps = list((await db.execute(select(ERPComprobante).where(
         ERPComprobante.empresa_id == empresa_id,
         ERPComprobante.fecha >= desde, ERPComprobante.fecha <= hasta,
-        ERPComprobante.estado == EstadoComprobante.CONTABILIZADO
+        ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS)
     ).order_by(ERPComprobante.fecha, ERPComprobante.id).limit(limite))).scalars().all())
 
     # Cuántos hay en realidad. Cortar en 500 sin decirlo hace creer que el mes
@@ -890,7 +890,7 @@ async def libro_diario(
     total = (await db.execute(select(func.count()).select_from(ERPComprobante).where(
         ERPComprobante.empresa_id == empresa_id,
         ERPComprobante.fecha >= desde, ERPComprobante.fecha <= hasta,
-        ERPComprobante.estado == EstadoComprobante.CONTABILIZADO))).scalar() or 0
+        ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS)))).scalar() or 0
 
     if not comps:
         return {"desde": desde, "hasta": hasta, "comprobantes": [],

@@ -161,7 +161,8 @@
       "agsEquipo": "Équipe",
       "catalogos": "Catalogues",
       "terminalPlanta": "Terminal d'atelier",
-      "facturaVenta": "Facture de vente"
+      "facturaVenta": "Facture de vente",
+      "pagosRecibidos": "Paiements reçus"
     },
     "section": {
       "principal": "Principal",

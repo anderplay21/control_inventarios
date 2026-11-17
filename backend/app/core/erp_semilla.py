@@ -103,6 +103,11 @@ PUC: List[Tuple[str, str, TipoCuenta, NaturalezaCuenta, bool]] = [
     ("237006", "Aportes a fondo de pensiones", TipoCuenta.PASIVO, NaturalezaCuenta.CREDITO, True),
     ("2380", "ACREEDORES VARIOS", TipoCuenta.PASIVO, NaturalezaCuenta.CREDITO, False),
     ("238095", "Otros acreedores", TipoCuenta.PASIVO, NaturalezaCuenta.CREDITO, True),
+    # Lo que el cliente paga antes de recibir el producto o el servicio. Es un
+    # pasivo hasta que se aplica a su factura.
+    ("28", "OTROS PASIVOS", TipoCuenta.PASIVO, NaturalezaCuenta.CREDITO, False),
+    ("2805", "ANTICIPOS Y AVANCES RECIBIDOS", TipoCuenta.PASIVO, NaturalezaCuenta.CREDITO, False),
+    ("280505", "De clientes", TipoCuenta.PASIVO, NaturalezaCuenta.CREDITO, True),
     ("24", "IMPUESTOS, GRAVÁMENES Y TASAS", TipoCuenta.PASIVO, NaturalezaCuenta.CREDITO, False),
     ("2408", "IMPUESTO SOBRE LAS VENTAS POR PAGAR", TipoCuenta.PASIVO, NaturalezaCuenta.CREDITO, False),
     ("240805", "IVA generado", TipoCuenta.PASIVO, NaturalezaCuenta.CREDITO, True),
@@ -252,6 +257,22 @@ REGLAS: List[tuple] = [
     ("RECAUDO_CLIENTE", "cartera", "130505", "CREDITO"),
     ("RECAUDO_CLIENTE", "retefuente", "135515", "DEBITO"),
     ("RECAUDO_CLIENTE", "descuento", "539995", "DEBITO"),
+
+    ("ANTICIPO_CLIENTE", "banco", "111005", "DEBITO"),
+    ("ANTICIPO_CLIENTE", "caja", "110505", "DEBITO"),
+    ("ANTICIPO_CLIENTE", "retefuente", "135515", "DEBITO"),
+    ("ANTICIPO_CLIENTE", "reteiva", "135517", "DEBITO"),
+    ("ANTICIPO_CLIENTE", "reteica", "135518", "DEBITO"),
+    ("ANTICIPO_CLIENTE", "anticipo", "280505", "CREDITO"),
+
+    ("OTRO_INGRESO", "banco", "111005", "DEBITO"),
+    ("OTRO_INGRESO", "caja", "110505", "DEBITO"),
+    ("OTRO_INGRESO", "retefuente", "135515", "DEBITO"),
+    ("OTRO_INGRESO", "reteiva", "135517", "DEBITO"),
+    ("OTRO_INGRESO", "reteica", "135518", "DEBITO"),
+
+    ("APLICACION_ANTICIPO", "anticipo", "280505", "DEBITO"),
+    ("APLICACION_ANTICIPO", "cartera", "130505", "CREDITO"),
 
     ("PAGO_PROVEEDOR", "proveedor", "220505", "DEBITO"),
     ("PAGO_PROVEEDOR", "banco", "111005", "CREDITO"),
