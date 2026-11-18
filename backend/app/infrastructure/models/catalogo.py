@@ -196,6 +196,9 @@ CATALOGOS_REGISTRO = [
     # ── ERP ──────────────────────────────────────────────────────────────
     _c("ERP", "TIPO_COMPROBANTE", "Tipos de comprobante", "Factura, nota, recibo"),
     _c("ERP", "FORMA_PAGO", "Formas de pago", "Contado, crédito, transferencia"),
+    # Con qué se paga (la forma de pago dice cuándo). Lo usan la factura de
+    # venta y el registro de pagos.
+    _c("ERP", "MEDIO_PAGO", "Medios de pago", "Efectivo, transferencia, tarjeta"),
     _c("ERP", "TIPO_IMPUESTO", "Tipos de impuesto", "IVA, retefuente, ICA"),
 
     # ── Manufactura MES ──────────────────────────────────────────────────

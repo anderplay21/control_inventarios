@@ -185,7 +185,9 @@
       "rtmDespachos": "Pickups & deliveries",
       "rtmLiquidacion": "Billing",
       "rtmGarantias": "Warranty",
-      "rtmIndicadores": "KPIs"
+      "rtmIndicadores": "KPIs",
+      "facturaVenta": "Sales invoice",
+      "pagosRecibidos": "Payments received"
     },
     "section": {
       "principal": "Main",
@@ -251,7 +253,8 @@
       "contabilidad": "Accounting",
       "cuentas": "Accounts",
       "fiscal": "Fiscal",
-      "corporativo": "Corporate"
+      "corporativo": "Corporate",
+      "ingresos": "Revenue"
     },
     "ws": {
       "control": "Pallet Control",

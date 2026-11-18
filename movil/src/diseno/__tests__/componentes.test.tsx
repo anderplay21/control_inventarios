@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react-native'
 import { Wrench } from 'lucide-react-native'
 import { ProveedorTema } from '../tema'
-import { AvisoSincronizacion, Boton, CampoNumerico, Chip, Fila, Interruptor, Segmentado, TACTIL } from '..'
+import { Acceso, AvisoSincronizacion, Boton, Campo, CampoNumerico, Chip, Fila, Interruptor, Segmentado, TACTIL } from '..'
 
 const conTema = (n: ReactNode) => render(<ProveedorTema>{n}</ProveedorTema>)
 
@@ -96,5 +96,24 @@ describe('Fila, Chip y aviso de sincronización', () => {
   ])('AvisoSincronizacion %j', async (p, texto) => {
     await conTema(<AvisoSincronizacion {...p} />)
     expect(screen.getByText(texto)).toBeTruthy()
+  })
+})
+
+describe('Acceso', () => {
+  it('se anuncia con su título y para qué sirve, y responde al toque', async () => {
+    const tocar = jest.fn()
+    await conTema(<Acceso titulo="Enviar reportes" detalle="PDF y Excel por período" icono={Wrench} onPress={tocar} destacado />)
+    await fireEvent.press(screen.getByRole('button', { name: 'Enviar reportes. PDF y Excel por período' }))
+    expect(tocar).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Campo sin rótulo', () => {
+  it('un buscador conserva su nombre accesible aunque el rótulo vaya dentro', async () => {
+    const cambio = jest.fn()
+    await conTema(<Campo sinRotulo etiqueta="Buscar placa o código" valor="" onCambio={cambio} />)
+    await fireEvent.changeText(screen.getByLabelText('Buscar placa o código'), 'abc')
+    expect(cambio).toHaveBeenCalledWith('abc')
+    expect(screen.getByPlaceholderText('Buscar placa o código')).toBeTruthy()
   })
 })

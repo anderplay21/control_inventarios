@@ -81,6 +81,9 @@ PERMISOS_PERFIL: List[Permiso] = [
     # toca un asiento ya en firme. Van aparte de crear por eso.
     Permiso("fin_contabilizar",  "Contabilizar comprobantes",   "Finanzas"),
     Permiso("fin_anular",        "Anular comprobantes",         "Finanzas"),
+    # Castigar es dar por perdida plata que alguien debe: va aparte de anular y
+    # de registrar pagos, para que no lo tenga cualquiera que maneje la cartera.
+    Permiso("fin_castigar",      "Castigar cartera (cerrar sin pago)", "Finanzas"),
     Permiso("fin_cartera",       "Ver cartera y CxC",           "Finanzas"),
     Permiso("fin_pagos",         "Registrar pagos y recaudos",  "Finanzas"),
     Permiso("fin_tesoreria",     "Bancos y tesorería",          "Finanzas"),

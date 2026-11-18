@@ -59,3 +59,11 @@ describe.each([['claro', CLARO], ['oscuro', OSCURO]] as const)('contraste en mod
     expect(Number(r.toFixed(2))).toBeGreaterThanOrEqual(minimo)
   })
 })
+
+// La cabecera de marca es un degradado: el texto debe leerse sobre sus dos extremos.
+describe.each([['claro', CLARO], ['oscuro', OSCURO]] as const)('cabecera de marca en modo %s', (_, c) => {
+  it.each([0, 1] as const)('texto sobre el extremo %d del degradado', i => {
+    expect(contraste(c.sobreMarca, c.marca[i], c.marca[i])).toBeGreaterThanOrEqual(7)
+    expect(contraste(c.sobreMarcaSuave, c.marca[i], c.marca[i])).toBeGreaterThanOrEqual(4.5)
+  })
+})

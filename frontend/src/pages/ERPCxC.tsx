@@ -1,8 +1,7 @@
 import React, { useState } from 'react'
 import {
   Box, Card, Typography, Button, Table, TableBody, TableCell,
-  TableHead, TableRow, Chip, Skeleton, Dialog, DialogTitle,
-  DialogContent, DialogActions, Grid, TextField, Select,
+  TableHead, TableRow, Chip, Skeleton, Grid, TextField, Select,
   MenuItem, FormControl, InputLabel, alpha, LinearProgress,
   Tabs, Tab,
 } from '@mui/material'
@@ -14,14 +13,13 @@ import {
   Schedule,
   MoneyOff,
 } from '@mui/icons-material'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
 import { Layout } from '@/components/layout/Layout'
-import toast from 'react-hot-toast'
+import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 
 import { COLOR_MODULO } from '@/config/marca'
-import { mensajeDeError } from '@/utils/errorApi'
 // ── Module brand ────────────────────────────────────────────────────────────
 const ERP_COLOR = COLOR_MODULO
 
@@ -100,17 +98,6 @@ const ESTADO_FACTURA: Record<
   PAGADA:              { bg: '#F0FDF4', color: '#16A34A', border: '#BBF7D0', label: 'Pagada' },
   VENCIDA:             { bg: '#FEF2F2', color: '#DC2626', border: '#FECACA', label: 'Vencida' },
   ANULADA:             { bg: '#1E293B', color: '#94A3B8', border: '#334155', label: 'Anulada' },
-}
-
-// ── Empty form ────────────────────────────────────────────────────────────────
-const EMPTY_FORM = {
-  numero: '',
-  cliente_nombre: '',
-  cliente_nit: '',
-  fecha: '',
-  fecha_vencimiento: '',
-  moneda: 'COP',
-  concepto: '',
 }
 
 // ── KPI Card ─────────────────────────────────────────────────────────────────
@@ -204,12 +191,10 @@ function KpiCard({ label, value, icon, accent, loading, sub }: KpiCardProps) {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function ERPCxC() {
-  const qc = useQueryClient()
   const [tabValue, setTabValue] = useState(0)
-  const [openNew, setOpenNew] = useState(false)
+  const navigate = useNavigate()
   const [filtroEstado, setFiltroEstado] = useState<string>('TODOS')
   const [searchCliente, setSearchCliente] = useState('')
-  const [form, setForm] = useState({ ...EMPTY_FORM })
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: facturas = [], isLoading: loadingFacturas } = useQuery<Factura[]>({
@@ -225,20 +210,6 @@ export default function ERPCxC() {
   const { data: pagos = [], isLoading: loadingPagos } = useQuery<Pago[]>({
     queryKey: ['erp-pagos-cobro'],
     queryFn: () => apiClient.get('/erp/pagos?tipo=COBRO').then((r) => r.data),
-  })
-
-  // ── Mutations ────────────────────────────────────────────────────────────
-  const createFactura = useMutation({
-    mutationFn: (data: typeof EMPTY_FORM) =>
-      apiClient.post('/erp/cxc/facturas', { ...data, fecha_vencimiento: data.fecha_vencimiento || null }).then((r) => r.data),
-    onSuccess: () => {
-      toast.success('Factura registrada')
-      qc.invalidateQueries({ queryKey: ['erp-cxc-facturas'] })
-      qc.invalidateQueries({ queryKey: ['erp-cxc-aging'] })
-      setOpenNew(false)
-      setForm({ ...EMPTY_FORM })
-    },
-    onError: (e: any) => toast.error(mensajeDeError(e, 'Error al registrar la factura')),
   })
 
   /**
@@ -455,7 +426,7 @@ export default function ERPCxC() {
               variant="contained"
               size="small"
               startIcon={<Add />}
-              onClick={() => setOpenNew(true)}
+              onClick={() => navigate('/erp/ingresos/factura-venta')}
               sx={{
                 bgcolor: ERP_COLOR,
                 '&:hover': { bgcolor: '#0D2347' },
@@ -903,149 +874,6 @@ export default function ERPCxC() {
         )}
       </Card>
 
-      {/* ── Nueva Factura Dialog ──────────────────────────────────────────── */}
-      <Dialog
-        open={openNew}
-        onClose={() => { setOpenNew(false); setForm({ ...EMPTY_FORM }) }}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle
-          sx={{
-            fontSize: '1rem',
-            fontWeight: 700,
-            color: '#1E293B',
-            pb: 1,
-            borderBottom: '1px solid #F1F5F9',
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '8px',
-                bgcolor: alpha(ERP_COLOR, 0.1),
-                color: ERP_COLOR,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Receipt sx={{ fontSize: 15 }} />
-            </Box>
-            Nueva Factura
-          </Box>
-        </DialogTitle>
-
-        <DialogContent sx={{ pt: 2.5 }}>
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                label="Número *"
-                fullWidth
-                size="small"
-                value={form.numero}
-                onChange={(e) => setForm((f) => ({ ...f, numero: e.target.value }))}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                label="NIT cliente"
-                fullWidth
-                size="small"
-                value={form.cliente_nit}
-                onChange={(e) => setForm((f) => ({ ...f, cliente_nit: e.target.value }))}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                label="Nombre del cliente *"
-                fullWidth
-                size="small"
-                value={form.cliente_nombre}
-                onChange={(e) => setForm((f) => ({ ...f, cliente_nombre: e.target.value }))}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                label="Fecha *"
-                type="date"
-                fullWidth
-                size="small"
-                InputLabelProps={{ shrink: true }}
-                value={form.fecha}
-                onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                label="Vencimiento"
-                helperText="Vacío: según los días de crédito de Configuración"
-                type="date"
-                fullWidth
-                size="small"
-                InputLabelProps={{ shrink: true }}
-                value={form.fecha_vencimiento}
-                onChange={(e) => setForm((f) => ({ ...f, fecha_vencimiento: e.target.value }))}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Moneda</InputLabel>
-                <Select
-                  value={form.moneda}
-                  label="Moneda"
-                  onChange={(e) => setForm((f) => ({ ...f, moneda: e.target.value }))}
-                >
-                  <MenuItem value="COP">COP — Peso colombiano</MenuItem>
-                  <MenuItem value="USD">USD — Dólar</MenuItem>
-                  <MenuItem value="EUR">EUR — Euro</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                label="Concepto"
-                fullWidth
-                size="small"
-                multiline
-                rows={2}
-                value={form.concepto}
-                onChange={(e) => setForm((f) => ({ ...f, concepto: e.target.value }))}
-                placeholder="Descripción del servicio o producto facturado..."
-              />
-            </Grid>
-          </Grid>
-        </DialogContent>
-
-        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
-          <Button
-            onClick={() => { setOpenNew(false); setForm({ ...EMPTY_FORM }) }}
-            variant="outlined"
-            size="small"
-          >
-            Cancelar
-          </Button>
-          <Button
-            variant="contained"
-            size="small"
-            disabled={
-              !form.numero ||
-              !form.cliente_nombre ||
-              !form.fecha ||
-              createFactura.isPending
-            }
-            onClick={() => createFactura.mutate(form)}
-            sx={{
-              bgcolor: ERP_COLOR,
-              '&:hover': { bgcolor: '#0D2347' },
-            }}
-          >
-            {createFactura.isPending ? 'Registrando...' : 'Registrar factura'}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Layout>
   )
 }

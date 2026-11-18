@@ -1,1 +1,1 @@
-Nuevo ícono y logo de TittanWare en la pantalla de ingreso, y ajustes de estabilidad.
+Nuevo aspecto: cabecera de marca, saludo e indicadores al entrar, y una pantalla de ingreso renovada.

@@ -1277,6 +1277,32 @@ async def _migrar_esquema(esquema: str) -> None:
             ("erp_facturas_cliente", "resolucion_id", "INTEGER REFERENCES erp_resolucion_facturacion(id)"),
             ("erp_facturas_cliente", "origen", "VARCHAR(20)"),
             ("erp_facturas_cliente", "estado_dian", "VARCHAR(20)"),
+            # ERP · Ingresos · Factura de venta. Todo opcional o con valor por
+            # omisión: las facturas existentes quedan como FACTURA_VENTA, sin
+            # vendedor y sin retenciones.
+            ("erp_facturas_cliente", "tipo_documento", "VARCHAR(20) DEFAULT 'FACTURA_VENTA' NOT NULL"),
+            ("erp_facturas_cliente", "tercero_id", "INTEGER REFERENCES erp_terceros(id)"),
+            ("erp_facturas_cliente", "vendedor_id", "INTEGER REFERENCES erp_terceros(id)"),
+            ("erp_facturas_cliente", "forma_pago", "VARCHAR(100)"),
+            ("erp_facturas_cliente", "medio_pago", "VARCHAR(100)"),
+            ("erp_facturas_cliente", "remision", "VARCHAR(100)"),
+            ("erp_facturas_cliente", "notas_adicionales", "TEXT"),
+            ("erp_facturas_cliente", "firma", "VARCHAR(500)"),
+            ("erp_facturas_cliente", "retencion_fuente", "NUMERIC(18,2) DEFAULT 0 NOT NULL"),
+            ("erp_facturas_cliente", "retencion_ica", "NUMERIC(18,2) DEFAULT 0 NOT NULL"),
+            ("erp_facturas_cliente", "retencion_iva", "NUMERIC(18,2) DEFAULT 0 NOT NULL"),
+            ("erp_facturas_cliente", "retenciones_editadas", "BOOLEAN DEFAULT false NOT NULL"),
+            ("erp_facturas_cliente", "cerrada_motivo", "TEXT"),
+            ("erp_facturas_cliente", "cerrada_por", "VARCHAR(200)"),
+            ("erp_facturas_cliente", "cerrada_en", "TIMESTAMPTZ"),
+            ("erp_facturas_cliente", "comprobante_id", "INTEGER REFERENCES erp_comprobantes(id)"),
+            ("erp_lineas_factura_cliente", "referencia", "VARCHAR(100)"),
+            ("erp_lineas_factura_cliente", "item_id", "INTEGER"),
+            ("erp_terceros", "es_vendedor", "BOOLEAN DEFAULT false NOT NULL"),
+            # ERP · Ingresos · Pagos recibidos: cada cobro pertenece a un recibo
+            # de caja; las tablas del recibo las crea `create_all` (ya corrió).
+            ("erp_pagos", "recibo_id", "INTEGER REFERENCES erp_recibos_caja(id)"),
+            ("erp_pagos", "origen", "VARCHAR(20) DEFAULT 'RECIBO' NOT NULL"),
             # Lubricación: el intervalo con que se programó cada cambio de
             # aceite, y con qué lubricante se hizo cada adición.
             ("eam_lube_carga", "intervalo_cambio", "DOUBLE PRECISION"),
@@ -1305,6 +1331,13 @@ async def _migrar_esquema(esquema: str) -> None:
             await conn.execute(text(
                 "ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s" % (tabla, columna, tipo)
             ))
+
+        # «Cerrar sin pago» deja la factura CASTIGADA. `estado` es un enum nativo
+        # y hay uno por esquema: `create_all` lo crea completo en una base nueva,
+        # pero en las existentes el valor se agrega acá. PostgreSQL 12+ lo admite
+        # dentro de la transacción, siempre que el valor no se use en ella.
+        await conn.execute(text(
+            "ALTER TYPE estadofactura ADD VALUE IF NOT EXISTS 'CASTIGADA'"))
 
         # Catálogos organizativos y contables. Se siembran las sedes y áreas
         # típicas y se rescata lo que ya esté escrito a mano en los activos.
@@ -1801,6 +1834,9 @@ async def _migrar_esquema(esquema: str) -> None:
                 ('ERP','FORMA_PAGO','Crédito 30 días',2),
                 ('ERP','FORMA_PAGO','Crédito 60 días',3),
                 ('ERP','FORMA_PAGO','Transferencia',4),
+                ('ERP','MEDIO_PAGO','Efectivo',1),
+                ('ERP','MEDIO_PAGO','Transferencia',2),
+                ('ERP','MEDIO_PAGO','Tarjeta',3),
                 ('ERP','TIPO_IMPUESTO','IVA 19%',1),
                 ('ERP','TIPO_IMPUESTO','IVA 5%',2),
                 ('ERP','TIPO_IMPUESTO','Excluido',3),
@@ -2449,6 +2485,7 @@ async def _migrar_esquema(esquema: str) -> None:
             ("ix_efp_empresa_estado", "erp_facturas_proveedor",
              "(empresa_id, estado, fecha_vencimiento)"),
             ("ix_epagos_empresa_fecha", "erp_pagos", "(empresa_id, fecha)"),
+            ("ix_epagos_recibo", "erp_pagos", "(recibo_id)"),
             # La auditoría se consulta por documento.
             ("ix_eaud_entidad", "erp_auditoria", "(empresa_id, entidad, entidad_id)"),
             # CMMS · llantas. La historia de una llanta (inspecciones,
@@ -2528,6 +2565,27 @@ async def _migrar_esquema(esquema: str) -> None:
             await db.rollback()
             logging.getLogger("uvicorn.error").warning(
                 "No se pudo sembrar el núcleo contable en «%s»: %s", esquema, e)
+
+    # ── Pagos recibidos ──
+    #
+    # Los cobros registrados antes de existir los recibos de caja reciben uno,
+    # con su número original, para que el listado de Pagos recibidos los muestre.
+    # Idempotente: solo toma los cobros que todavía no tienen recibo.
+    async with AsyncSession(engine) as db:
+        await db.execute(text(f'SET search_path TO "{esquema}"'))
+        try:
+            from app.core import erp_recibos
+
+            hechos = await erp_recibos.agrupar_historicos(db)
+            await db.commit()
+            if hechos:
+                logging.getLogger("uvicorn.error").info(
+                    "Pagos recibidos en «%s»: %d cobros anteriores quedaron con su recibo.",
+                    esquema, hechos)
+        except Exception as e:   # noqa: BLE001
+            await db.rollback()
+            logging.getLogger("uvicorn.error").warning(
+                "No se pudieron agrupar los cobros anteriores en «%s»: %s", esquema, e)
 
 
 # Número arbitrario pero fijo: identifica este candado y nada más.

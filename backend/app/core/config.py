@@ -104,6 +104,17 @@ class Settings(BaseSettings):
     # Esfuerzo de razonamiento: «low» para charla y consultas es suficiente y
     # mucho más barato; se sube si las respuestas se quedan cortas.
     TITTANBOT_ESFUERZO: str = "low"
+    # ── ERP · Factura asistida por IA ──
+    # Usa la misma clave de Anthropic que TittanBot. Leer una factura y llenar el
+    # formulario pide precisión en cifras: va con Opus 5.5 y esfuerzo medio.
+    ERP_IA_MODELO: str = "claude-opus-5-5"
+    ERP_IA_ESFUERZO: str = "medium"
+    # Proveedor de la lectura de facturas: «anthropic» (TITTANBOT_API_KEY y
+    # ERP_IA_MODELO) u «openai» (OPENAI_API_KEY y ERP_IA_MODELO_OPENAI; vacío
+    # usa OPENAI_MODELO_EXTRACCION, el mismo de las reuniones del CRM).
+    ERP_IA_PROVEEDOR: str = "anthropic"
+    ERP_IA_MODELO_OPENAI: str = ""
+    ERP_IA_MAX_MB: int = 10                 # tamaño máximo del archivo que se lee
     TITTANBOT_TOPE_DIA: int = 120          # mensajes por usuario al día
     TITTANBOT_TOPE_EMPRESA_DIA: int = 2000  # mensajes por empresa al día
     TITTANBOT_MAX_VUELTAS: int = 8          # herramientas encadenadas por mensaje

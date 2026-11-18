@@ -53,6 +53,9 @@ class EstadoFactura(str, enum.Enum):
     PAGADA = "PAGADA"
     VENCIDA = "VENCIDA"
     ANULADA = "ANULADA"
+    # «Cerrar sin pago»: el saldo se dio por perdido con un asiento de castigo.
+    # En bases existentes el valor se agrega con ALTER TYPE (main._migrar_esquema).
+    CASTIGADA = "CASTIGADA"
 
 class TipoImpuestoEnum(str, enum.Enum):
     IVA = "IVA"
@@ -346,6 +349,32 @@ class ERPFacturaCliente(Base, TimestampMixin, SoftDeleteMixin):
     origen          = Column(String(20), nullable=True)        # POS, ERP…
     estado_dian     = Column(String(20), nullable=True)        # POR_TRANSMITIR, ACEPTADA, RECHAZADA
 
+    # ── Factura de venta del ERP (Ingresos) ──
+    # FACTURA_VENTA o TICKET: decide de qué resolución sale el número.
+    tipo_documento  = Column(String(20), nullable=False, default="FACTURA_VENTA",
+                             server_default="FACTURA_VENTA")
+    # El cliente y el vendedor son terceros. `cliente_nombre/nit/email` se conservan
+    # como copia del documento: lo que se imprimió no cambia si el tercero se edita.
+    tercero_id      = Column(Integer, ForeignKey("erp_terceros.id"), nullable=True)
+    vendedor_id     = Column(Integer, ForeignKey("erp_terceros.id"), nullable=True)
+    forma_pago      = Column(String(100), nullable=True)       # catálogo ERP/FORMA_PAGO
+    medio_pago      = Column(String(100), nullable=True)       # catálogo ERP/MEDIO_PAGO
+    remision        = Column(String(100), nullable=True)       # dato informativo
+    notas_adicionales = Column(Text, nullable=True)            # internas, no se imprimen
+    firma           = Column(String(500), nullable=True)       # ruta del archivo en UPLOAD_DIR
+    # Retenciones que el cliente practica sobre la factura. `saldo` ya las descuenta.
+    retencion_fuente = Column(Numeric(18, 2), nullable=False, default=0, server_default="0")
+    retencion_ica   = Column(Numeric(18, 2), nullable=False, default=0, server_default="0")
+    retencion_iva   = Column(Numeric(18, 2), nullable=False, default=0, server_default="0")
+    retenciones_editadas = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Castigo de cartera («Cerrar sin pago»).
+    cerrada_motivo  = Column(Text, nullable=True)
+    cerrada_por     = Column(String(200), nullable=True)
+    cerrada_en      = Column(DateTime(timezone=True), nullable=True)
+    # El asiento de venta vigente de la factura. El comprobante solo guarda el
+    # número como referencia; con esto el reverso encuentra el suyo sin ambigüedad.
+    comprobante_id  = Column(Integer, ForeignKey("erp_comprobantes.id"), nullable=True)
+
     lineas          = relationship("ERPLineaFacturaCliente", back_populates="factura", cascade="all, delete-orphan")
     pagos           = relationship("ERPPago", back_populates="factura_cliente")
 
@@ -355,6 +384,10 @@ class ERPLineaFacturaCliente(Base):
 
     id              = Column(Integer, primary_key=True, index=True)
     factura_id      = Column(Integer, ForeignKey("erp_facturas_cliente.id"), nullable=False)
+    # Referencia en texto libre. `item_id` queda reservado para el catálogo de ítems
+    # del inventario del ERP: se llena cuando exista, sin clave foránea todavía.
+    referencia      = Column(String(100), nullable=True)
+    item_id         = Column(Integer, nullable=True)
     descripcion     = Column(String(500), nullable=False)
     cantidad        = Column(Numeric(12, 4), nullable=False, default=1)
     precio_unitario = Column(Numeric(18, 2), nullable=False, default=0)
@@ -418,6 +451,11 @@ class ERPPago(Base, TimestampMixin):
     estado          = Column(Enum(EstadoPago), nullable=False, default=EstadoPago.PROGRAMADO)
     comprobante_id  = Column(Integer, ForeignKey("erp_comprobantes.id"), nullable=True)
     concepto        = Column(String(300), nullable=True)
+    # Pagos recibidos: el recibo de caja al que pertenece este cobro. Con
+    # origen ANTICIPO es la aplicación de un anticipo y el recibo es el del
+    # anticipo (sin cuenta bancaria: el dinero ya había entrado).
+    recibo_id       = Column(Integer, ForeignKey("erp_recibos_caja.id"), nullable=True)   # índice ix_epagos_recibo (main.py)
+    origen          = Column(String(20), nullable=False, default="RECIBO", server_default="RECIBO")
 
     factura_cliente   = relationship("ERPFacturaCliente", back_populates="pagos")
     factura_proveedor = relationship("ERPFacturaProveedor", back_populates="pagos")

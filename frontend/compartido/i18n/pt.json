@@ -159,7 +159,9 @@
       "agsIngresos": "Receitas",
       "agsServicios": "Serviços",
       "agsEquipo": "Equipe",
-      "catalogos": "Catálogos"
+      "catalogos": "Catálogos",
+      "facturaVenta": "Fatura de venda",
+      "pagosRecibidos": "Pagamentos recebidos"
     },
     "section": {
       "principal": "Principal",
@@ -225,7 +227,8 @@
       "contabilidad": "Contabilidade",
       "cuentas": "Contas",
       "fiscal": "Fiscal",
-      "corporativo": "Corporativo"
+      "corporativo": "Corporativo",
+      "ingresos": "Receitas"
     },
     "ws": {
       "control": "Controle de Estivas",

@@ -12,6 +12,7 @@ import { cerrarEnServidor, authApi } from '@/api/auth'
 import { puedeVerCommandCenter, rutaInicial } from '@/components/layout/WorkspacePanel'
 import { clienteGuardado } from '@/api/cliente'
 import { Logotipo } from '@/components/Logotipo'
+import { MarcoCargando } from '@/components/layout/MarcoCargando'
 
 // Prefijo de ruta → clave de permiso. Las rutas no listadas aquí son de libre acceso.
 const ROUTE_PERM_MAP: Record<string, string> = {
@@ -301,6 +302,8 @@ const ERPTesoreria = React.lazy(() => import('@/pages/ERPTesoreria'))
 const ERPCxC = React.lazy(() => import('@/pages/ERPCxC'))
 const ERPCxP = React.lazy(() => import('@/pages/ERPCxP'))
 const ERPFacturacion = React.lazy(() => import('@/pages/ERPFacturacion'))
+const ERPFacturaVenta = React.lazy(() => import('@/pages/ERPFacturaVenta'))
+const ERPPagosRecibidos = React.lazy(() => import('@/pages/ERPPagosRecibidos'))
 const ERPTributacion = React.lazy(() => import('@/pages/ERPTributacion'))
 const ERPPresupuestos = React.lazy(() => import('@/pages/ERPPresupuestos'))
 const ERPCosteo = React.lazy(() => import('@/pages/ERPCosteo'))
@@ -416,7 +419,15 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Pantallas que no llevan el marco de la aplicación (ingreso, portales, lector).
+const SIN_MARCO = ['/login', '/empresa', '/reservar', '/portal', '/scanner-movil', '/app-movil', '/sin-acceso']
+
 function PageLoader() {
+  const { isAuthenticated } = useAuthStore()
+  const { pathname } = useLocation()
+  // Con la sesión abierta, el marco se queda y solo el contenido se dibuja:
+  // abrir un módulo ya no apaga la pantalla entera.
+  if (isAuthenticated && !SIN_MARCO.some(r => pathname.startsWith(r))) return <MarcoCargando />
   return (
     <Box sx={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -748,6 +759,8 @@ export default function App() {
             <Route path="/erp/contabilidad" element={<ProtectedRoute><ERPContabilidad /></ProtectedRoute>} />
             <Route path="/erp/terceros" element={<ProtectedRoute><ERPTerceros /></ProtectedRoute>} />
             <Route path="/erp/tesoreria" element={<ProtectedRoute><ERPTesoreria /></ProtectedRoute>} />
+            <Route path="/erp/ingresos/factura-venta" element={<ProtectedRoute><ERPFacturaVenta /></ProtectedRoute>} />
+            <Route path="/erp/ingresos/pagos-recibidos" element={<ProtectedRoute><ERPPagosRecibidos /></ProtectedRoute>} />
             <Route path="/erp/cxc" element={<ProtectedRoute><ERPCxC /></ProtectedRoute>} />
             <Route path="/erp/cxp" element={<ProtectedRoute><ERPCxP /></ProtectedRoute>} />
             <Route path="/erp/facturacion" element={<ProtectedRoute><ERPFacturacion /></ProtectedRoute>} />

@@ -11,18 +11,11 @@ import {
   TableRow,
   Chip,
   Skeleton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   Grid,
-  TextField,
   Select,
   MenuItem,
   FormControl,
-  InputLabel,
   alpha,
-  Divider,
   IconButton,
   Tooltip,
 } from '@mui/material'
@@ -34,12 +27,12 @@ import {
   QrCode,
   Search,
   FilterList,
-  Edit,
 } from '@mui/icons-material'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
 import { Layout } from '@/components/layout/Layout'
 import toast from 'react-hot-toast'
+import { useNavigate } from 'react-router-dom'
 import { exportarPDF } from '@/utils/exportar'
 import { format } from 'date-fns'
 
@@ -94,19 +87,7 @@ interface Factura {
   concepto?: string
 }
 
-interface Impuesto {
-  id: number
-  nombre: string
-  tasa: number
-  codigo?: string
-}
 
-interface LineItem {
-  descripcion: string
-  cantidad: string
-  precio_unitario: string
-  impuesto_id: string
-}
 
 // ── Estado config ─────────────────────────────────────────────────────────────
 const ESTADO_CONFIG: Record<EstadoFactura, { bg: string; color: string; border: string; label: string }> = {
@@ -115,25 +96,6 @@ const ESTADO_CONFIG: Record<EstadoFactura, { bg: string; color: string; border: 
   PAGADA:   { bg: '#F0FDF4', color: '#16A34A', border: '#BBF7D0', label: 'Pagada' },
   VENCIDA:  { bg: '#FEF2F2', color: '#DC2626', border: '#FECACA', label: 'Vencida' },
   ANULADA:  { bg: '#1E293B', color: '#94A3B8', border: '#334155', label: 'Anulada' },
-}
-
-// ── Empty state ───────────────────────────────────────────────────────────────
-const EMPTY_FORM = {
-  numero: '',
-  cliente_nombre: '',
-  cliente_nit: '',
-  cliente_email: '',
-  fecha: todayISO(),
-  fecha_vencimiento: '',
-  moneda: 'COP',
-  concepto: '',
-}
-
-const EMPTY_LINE: LineItem = {
-  descripcion: '',
-  cantidad: '1',
-  precio_unitario: '',
-  impuesto_id: '',
 }
 
 // ── KPI Card ──────────────────────────────────────────────────────────────────
@@ -229,16 +191,12 @@ function KpiCard({ label, value, icon, accent, loading, sub }: KpiCardProps) {
 export default function ERPFacturacion() {
   const qc = useQueryClient()
 
-  // — Dialog state
-  const [openNew, setOpenNew] = useState(false)
+  const navigate = useNavigate()
 
   // — Filters
   const [filtroEstado, setFiltroEstado] = useState<string>('TODOS')
   const [searchCliente, setSearchCliente] = useState('')
 
-  // — Create form
-  const [form, setForm] = useState({ ...EMPTY_FORM })
-  const [lineItems, setLineItems] = useState<LineItem[]>([{ ...EMPTY_LINE }])
 
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: facturas = [], isLoading: loadingFacturas } = useQuery<Factura[]>({
@@ -246,23 +204,7 @@ export default function ERPFacturacion() {
     queryFn: () => apiClient.get('/erp/cxc/facturas').then((r) => r.data),
   })
 
-  const { data: impuestos = [] } = useQuery<Impuesto[]>({
-    queryKey: ['erp-fe-impuestos'],
-    queryFn: () => apiClient.get('/erp/tributacion/impuestos').then((r) => r.data),
-  })
-
   // ── Mutations ─────────────────────────────────────────────────────────────
-  const createFactura = useMutation({
-    mutationFn: (payload: object) =>
-      apiClient.post('/erp/cxc/facturas', payload).then((r) => r.data),
-    onSuccess: () => {
-      toast.success('Factura electrónica creada')
-      qc.invalidateQueries({ queryKey: ['erp-fe-facturas'] })
-      handleCloseNew()
-    },
-    onError: (e: any) => toast.error(mensajeDeError(e, 'Error al crear la factura')),
-  })
-
   const emitirFactura = useMutation({
     mutationFn: (id: number) =>
       apiClient.patch(`/erp/cxc/facturas/${id}`, { estado: 'EMITIDA' }).then((r) => r.data),
@@ -272,45 +214,6 @@ export default function ERPFacturacion() {
     },
     onError: (e: any) => toast.error(mensajeDeError(e, 'Error al emitir la factura')),
   })
-
-  // ── Dialog helpers ─────────────────────────────────────────────────────────
-  function handleCloseNew() {
-    setOpenNew(false)
-    setForm({ ...EMPTY_FORM })
-    setLineItems([{ ...EMPTY_LINE }])
-  }
-
-  function addLine() {
-    setLineItems((prev) => [...prev, { ...EMPTY_LINE }])
-  }
-
-  function removeLine(idx: number) {
-    setLineItems((prev) => prev.filter((_, i) => i !== idx))
-  }
-
-  function updateLine(idx: number, field: keyof LineItem, value: string) {
-    setLineItems((prev) =>
-      prev.map((l, i) => (i === idx ? { ...l, [field]: value } : l)),
-    )
-  }
-
-  // ── Computed totals ────────────────────────────────────────────────────────
-  function lineSubtotal(line: LineItem): number {
-    const qty = parseFloat(line.cantidad) || 0
-    const price = parseFloat(line.precio_unitario) || 0
-    return qty * price
-  }
-
-  function lineTax(line: LineItem): number {
-    const subtotal = lineSubtotal(line)
-    const imp = impuestos.find((t) => String(t.id) === line.impuesto_id)
-    if (!imp) return 0
-    return subtotal * (imp.tasa / 100)
-  }
-
-  const subtotalTotal = lineItems.reduce((s, l) => s + lineSubtotal(l), 0)
-  const impuestosTotal = lineItems.reduce((s, l) => s + lineTax(l), 0)
-  const grandTotal = subtotalTotal + impuestosTotal
 
   // ── KPI derivations ────────────────────────────────────────────────────────
   const today = todayISO()
@@ -331,23 +234,6 @@ export default function ERPFacturacion() {
       .includes(searchCliente.toLowerCase())
     return matchEstado && matchCliente
   })
-
-  // ── Submit ─────────────────────────────────────────────────────────────────
-  function handleSubmit() {
-    if (!form.numero || !form.cliente_nombre || !form.fecha || !form.fecha_vencimiento) {
-      toast.error('Complete los campos obligatorios')
-      return
-    }
-    const lineas = lineItems
-      .filter((l) => l.descripcion.trim())
-      .map((l) => ({
-        descripcion: l.descripcion,
-        cantidad: parseFloat(l.cantidad) || 1,
-        precio_unitario: parseFloat(l.precio_unitario) || 0,
-        impuesto_id: l.impuesto_id ? Number(l.impuesto_id) : null,
-      }))
-    createFactura.mutate({ ...form, lineas })
-  }
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -513,7 +399,7 @@ export default function ERPFacturacion() {
               variant="contained"
               size="small"
               startIcon={<Add />}
-              onClick={() => setOpenNew(true)}
+              onClick={() => navigate('/erp/ingresos/factura-venta')}
               sx={{
                 bgcolor: ERP_COLOR,
                 '&:hover': { bgcolor: '#0D2347' },
@@ -690,379 +576,6 @@ export default function ERPFacturacion() {
         </Box>
       </Card>
 
-      {/* ── Create dialog ─────────────────────────────────────────────────── */}
-      <Dialog
-        open={openNew}
-        onClose={handleCloseNew}
-        maxWidth="md"
-        fullWidth
-        PaperProps={{ sx: { borderRadius: '20px' } }}
-      >
-        <DialogTitle
-          sx={{
-            pb: 1.5,
-            borderBottom: '1px solid #F1F5F9',
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Box
-              sx={{
-                width: 32,
-                height: 32,
-                borderRadius: '9px',
-                background: `linear-gradient(135deg, ${ERP_COLOR} 0%, #0D2347 100%)`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Edit sx={{ color: '#fff', fontSize: 16 }} />
-            </Box>
-            <Box>
-              <Typography sx={{ fontSize: '1rem', fontWeight: 700, color: '#1E293B', lineHeight: 1.2 }}>
-                Nueva Factura Electrónica
-              </Typography>
-              <Typography sx={{ fontSize: '0.75rem', color: '#94A3B8' }}>
-                Documento tributario electrónico — DIAN
-              </Typography>
-            </Box>
-          </Box>
-        </DialogTitle>
-
-        <DialogContent sx={{ pt: 2.5, pb: 0 }}>
-          {/* ── Section 1: Datos del cliente ── */}
-          <Typography
-            sx={{
-              fontSize: '0.68rem',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              color: ERP_COLOR,
-              mb: 1.5,
-            }}
-          >
-            Datos del cliente
-          </Typography>
-          <Grid container spacing={2} sx={{ mb: 2.5 }}>
-            <Grid item xs={12} sm={8}>
-              <TextField
-                label="Nombre del cliente *"
-                fullWidth
-                size="small"
-                value={form.cliente_nombre}
-                onChange={(e) => setForm((f) => ({ ...f, cliente_nombre: e.target.value }))}
-              />
-            </Grid>
-            <Grid item xs={12} sm={4}>
-              <TextField
-                label="NIT / Identificación"
-                fullWidth
-                size="small"
-                value={form.cliente_nit}
-                onChange={(e) => setForm((f) => ({ ...f, cliente_nit: e.target.value }))}
-              />
-            </Grid>
-            <Grid item xs={12} sm={8}>
-              <TextField
-                label="Correo electrónico"
-                type="email"
-                fullWidth
-                size="small"
-                value={form.cliente_email}
-                onChange={(e) => setForm((f) => ({ ...f, cliente_email: e.target.value }))}
-              />
-            </Grid>
-            <Grid item xs={12} sm={4}>
-              <TextField
-                label="Número de factura *"
-                fullWidth
-                size="small"
-                placeholder="FE-0001"
-                value={form.numero}
-                onChange={(e) => setForm((f) => ({ ...f, numero: e.target.value }))}
-              />
-            </Grid>
-          </Grid>
-
-          <Divider sx={{ mb: 2.5 }} />
-
-          {/* ── Section 2: Fechas y moneda ── */}
-          <Typography
-            sx={{
-              fontSize: '0.68rem',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              color: ERP_COLOR,
-              mb: 1.5,
-            }}
-          >
-            Fechas y moneda
-          </Typography>
-          <Grid container spacing={2} sx={{ mb: 2.5 }}>
-            <Grid item xs={12} sm={4}>
-              <TextField
-                label="Fecha de emisión *"
-                type="date"
-                fullWidth
-                size="small"
-                InputLabelProps={{ shrink: true }}
-                value={form.fecha}
-                onChange={(e) => setForm((f) => ({ ...f, fecha: e.target.value }))}
-              />
-            </Grid>
-            <Grid item xs={12} sm={4}>
-              <TextField
-                label="Fecha de vencimiento *"
-                type="date"
-                fullWidth
-                size="small"
-                InputLabelProps={{ shrink: true }}
-                value={form.fecha_vencimiento}
-                onChange={(e) => setForm((f) => ({ ...f, fecha_vencimiento: e.target.value }))}
-              />
-            </Grid>
-            <Grid item xs={12} sm={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Moneda</InputLabel>
-                <Select
-                  value={form.moneda}
-                  label="Moneda"
-                  onChange={(e) => setForm((f) => ({ ...f, moneda: e.target.value }))}
-                >
-                  <MenuItem value="COP">COP — Peso colombiano</MenuItem>
-                  <MenuItem value="USD">USD — Dólar</MenuItem>
-                  <MenuItem value="EUR">EUR — Euro</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-          </Grid>
-
-          <Divider sx={{ mb: 2.5 }} />
-
-          {/* ── Section 3: Líneas de factura ── */}
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              mb: 1.5,
-            }}
-          >
-            <Typography
-              sx={{
-                fontSize: '0.68rem',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                color: ERP_COLOR,
-              }}
-            >
-              Líneas de factura
-            </Typography>
-            <Button
-              size="small"
-              startIcon={<Add />}
-              onClick={addLine}
-              sx={{ color: ERP_COLOR, fontSize: '0.78rem', py: 0.25 }}
-            >
-              Agregar línea
-            </Button>
-          </Box>
-
-          {/* Line items table */}
-          <Box
-            sx={{
-              border: '1px solid #E2E8F0',
-              borderRadius: '12px',
-              overflow: 'hidden',
-              mb: 1.5,
-            }}
-          >
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ minWidth: 200 }}>Descripción</TableCell>
-                  <TableCell sx={{ width: 80 }} align="center">Cantidad</TableCell>
-                  <TableCell sx={{ width: 140 }} align="right">Precio unitario</TableCell>
-                  <TableCell sx={{ width: 150 }}>Impuesto</TableCell>
-                  <TableCell sx={{ width: 120 }} align="right">Subtotal</TableCell>
-                  <TableCell sx={{ width: 40 }} />
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {lineItems.map((line, idx) => {
-                  const sub = lineSubtotal(line)
-                  return (
-                    <TableRow key={idx}>
-                      <TableCell>
-                        <TextField
-                          size="small"
-                          placeholder="Descripción del servicio o producto"
-                          fullWidth
-                          value={line.descripcion}
-                          onChange={(e) => updateLine(idx, 'descripcion', e.target.value)}
-                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={line.cantidad}
-                          onChange={(e) => updateLine(idx, 'cantidad', e.target.value)}
-                          inputProps={{ style: { textAlign: 'center' }, min: 1 }}
-                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TextField
-                          size="small"
-                          type="number"
-                          placeholder="0"
-                          value={line.precio_unitario}
-                          onChange={(e) => updateLine(idx, 'precio_unitario', e.target.value)}
-                          inputProps={{ style: { textAlign: 'right' }, min: 0 }}
-                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          size="small"
-                          displayEmpty
-                          value={line.impuesto_id}
-                          onChange={(e) => updateLine(idx, 'impuesto_id', e.target.value)}
-                          sx={{ borderRadius: '8px', fontSize: '0.8rem', width: '100%' }}
-                        >
-                          <MenuItem value="">Sin impuesto</MenuItem>
-                          {impuestos.map((t) => (
-                            <MenuItem key={t.id} value={String(t.id)}>
-                              {t.nombre} {t.tasa}%
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography
-                          sx={{
-                            fontSize: '0.8rem',
-                            fontWeight: 600,
-                            color: sub > 0 ? '#1E293B' : '#CBD5E1',
-                            fontFamily: 'monospace',
-                          }}
-                        >
-                          {sub > 0 ? formatCurrency(sub) : '—'}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        {lineItems.length > 1 && (
-                          <IconButton
-                            size="small"
-                            onClick={() => removeLine(idx)}
-                            sx={{ color: '#94A3B8', '&:hover': { color: '#DC2626', bgcolor: '#FEF2F2' } }}
-                          >
-                            <Typography sx={{ fontSize: '1rem', lineHeight: 1, fontWeight: 700 }}>×</Typography>
-                          </IconButton>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </Box>
-
-          {/* Running totals */}
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              mb: 2.5,
-            }}
-          >
-            <Box
-              sx={{
-                minWidth: 280,
-                p: 2,
-                borderRadius: '12px',
-                bgcolor: alpha(ERP_COLOR, 0.03),
-                border: `1px solid ${alpha(ERP_COLOR, 0.1)}`,
-              }}
-            >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.75 }}>
-                <Typography sx={{ fontSize: '0.8rem', color: '#64748B' }}>Subtotal</Typography>
-                <Typography sx={{ fontSize: '0.8rem', fontWeight: 600, fontFamily: 'monospace' }}>
-                  {formatCurrency(subtotalTotal)}
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography sx={{ fontSize: '0.8rem', color: '#64748B' }}>Impuestos</Typography>
-                <Typography sx={{ fontSize: '0.8rem', fontWeight: 600, fontFamily: 'monospace' }}>
-                  {formatCurrency(impuestosTotal)}
-                </Typography>
-              </Box>
-              <Divider sx={{ mb: 1 }} />
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography sx={{ fontSize: '0.9rem', fontWeight: 700, color: ERP_COLOR }}>
-                  Total
-                </Typography>
-                <Typography
-                  sx={{
-                    fontSize: '0.9rem',
-                    fontWeight: 800,
-                    color: ERP_COLOR,
-                    fontFamily: 'monospace',
-                  }}
-                >
-                  {formatCurrency(grandTotal)}
-                </Typography>
-              </Box>
-            </Box>
-          </Box>
-
-          {/* Concepto */}
-          <TextField
-            label="Concepto / observaciones"
-            fullWidth
-            size="small"
-            multiline
-            rows={2}
-            value={form.concepto}
-            onChange={(e) => setForm((f) => ({ ...f, concepto: e.target.value }))}
-            placeholder="Descripción general del documento..."
-            sx={{ mb: 2.5 }}
-          />
-        </DialogContent>
-
-        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #F1F5F9', gap: 1 }}>
-          <Button
-            onClick={handleCloseNew}
-            variant="outlined"
-            size="small"
-            color="inherit"
-          >
-            Cancelar
-          </Button>
-          <Button
-            variant="contained"
-            size="small"
-            disabled={
-              !form.numero ||
-              !form.cliente_nombre ||
-              !form.fecha ||
-              !form.fecha_vencimiento ||
-              createFactura.isPending
-            }
-            onClick={handleSubmit}
-            sx={{
-              bgcolor: ERP_COLOR,
-              '&:hover': { bgcolor: '#0D2347' },
-            }}
-          >
-            {createFactura.isPending ? 'Creando...' : 'Crear factura'}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Layout>
   )
 }

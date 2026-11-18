@@ -42,6 +42,18 @@ export interface Colores {
   velo: string
   sombra: string
   brillo: string
+  /** La cabecera de marca: degradado oscuro (inicio → fin), igual en claro y en oscuro. */
+  marca: readonly [string, string]
+  /** El resplandor de acento que asoma en una esquina de la cabecera. */
+  marcaBrillo: string
+  sobreMarca: string
+  sobreMarcaSuave: string
+  /** Botones y fichas translúcidos sobre la cabecera de marca. */
+  cristal: string
+  cristalBorde: string
+  /** Puntos de estado sobre la cabecera oscura (iguales en claro y en oscuro). */
+  alertaSobreMarca: string
+  exitoSobreMarca: string
 }
 
 export const CLARO: Colores = {
@@ -72,6 +84,14 @@ export const CLARO: Colores = {
   velo: 'rgba(14,16,19,0.45)',
   sombra: '#0E1013',
   brillo: 'rgba(255,255,255,0.6)',
+  marca: ['#0C0E13', '#152444'],
+  marcaBrillo: ACENTO.base,
+  sobreMarca: '#FFFFFF',
+  sobreMarcaSuave: 'rgba(255,255,255,0.72)',
+  cristal: 'rgba(255,255,255,0.12)',
+  cristalBorde: 'rgba(255,255,255,0.18)',
+  alertaSobreMarca: '#FBBF24',
+  exitoSobreMarca: '#4ADE80',
 }
 
 export const OSCURO: Colores = {
@@ -102,6 +122,14 @@ export const OSCURO: Colores = {
   velo: 'rgba(0,0,0,0.6)',
   sombra: '#000000',
   brillo: 'rgba(255,255,255,0.06)',
+  marca: ['#0A0C10', '#14213D'],
+  marcaBrillo: ACENTO.base,
+  sobreMarca: '#FFFFFF',
+  sobreMarcaSuave: 'rgba(255,255,255,0.72)',
+  cristal: 'rgba(255,255,255,0.10)',
+  cristalBorde: 'rgba(255,255,255,0.16)',
+  alertaSobreMarca: '#FBBF24',
+  exitoSobreMarca: '#4ADE80',
 }
 
 /** Los colores de dato de la marca, para gráficos (no cambian con el modo). */

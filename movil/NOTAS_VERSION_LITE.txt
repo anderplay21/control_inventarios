@@ -1,1 +1,1 @@
-Nuevo ícono y logo de TittanWare (ingreso y cabecera), y esquema del vehículo durante la inspección: muestra las profundidades de cada llanta y permite ir a cualquiera tocándola.
+Nuevo aspecto: cabecera de marca con sus cifras (vehículos, enviados y por enviar), accesos más claros, la lista de vehículos dice hace cuánto fue la última inspección y la captura de profundidades avisa cuando un surco sube frente a la medición anterior.

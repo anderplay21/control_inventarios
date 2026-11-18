@@ -2926,6 +2926,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/eam/lite/sincronizar-pendientes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sincronizar Pendientes
+         * @description Reintenta de una vez todo lo que no está en TittanWare.
+         *
+         *     Va en orden de fecha —TittanWare no acepta una inspección anterior a la
+         *     última de la llanta— y las inspecciones antes que las disposiciones, porque
+         *     la baja cierra la llanta. Trabaja por tandas de pocos segundos: mientras
+         *     `faltan` no sea cero se vuelve a llamar con el `corte` y el
+         *     `desde_disposicion` que devolvió, y así cada registro se intenta una sola
+         *     vez por pasada (lo que se rechaza no vuelve a entrar en la misma).
+         */
+        post: operations["sincronizar_pendientes_api_v1_eam_lite_sincronizar_pendientes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/eam/lite/tablero/modelo": {
         parameters: {
             query?: never;
@@ -20993,6 +21020,38 @@ export interface operations {
             path: {
                 iid: number;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sincronizar_pendientes_api_v1_eam_lite_sincronizar_pendientes_post: {
+        parameters: {
+            query?: {
+                corte?: string | null;
+                desde_disposicion?: number;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

@@ -214,6 +214,8 @@ import {
   RequestQuote as ERPCxCIconERP,
   Payment as ERPCxPIconERP,
   Receipt as ERPFacturacionIconERP,
+  RequestPage as ERPFacturaVentaIconERP,
+  PriceCheck as ERPPagosRecibidosIconERP,
   Calculate as ERPTributacionIconERP,
   Summarize as ERPPresupuestosIconERP,
   Analytics as ERPCosteoIconERP,
@@ -572,6 +574,8 @@ const APS_SECTIONS = ['section.general', 'section.demanda', 'section.supply', 's
 
 const ERP_NAV_ITEMS: NavItem[] = [
   { label: 'nav.dashboard',       icon: <ERPDashIconERP         fontSize="small" />, path: '/erp',                   section: 'section.general',    exact: true },
+  { label: 'nav.facturaVenta',    icon: <ERPFacturaVentaIconERP fontSize="small" />, path: '/erp/ingresos/factura-venta', section: 'section.ingresos' },
+  { label: 'nav.pagosRecibidos',  icon: <ERPPagosRecibidosIconERP fontSize="small" />, path: '/erp/ingresos/pagos-recibidos', section: 'section.ingresos' },
   { label: 'nav.contabilidad',    icon: <ERPContabilidadIconERP fontSize="small" />, path: '/erp/contabilidad',      section: 'section.contabilidad' },
   { label: 'nav.tesoreria',       icon: <ERPTesoreriaIconERP    fontSize="small" />, path: '/erp/tesoreria',         section: 'section.contabilidad' },
   { label: 'nav.terceros',        icon: <ERPTercerosIconERP     fontSize="small" />, path: '/erp/terceros',          section: 'section.contabilidad' },
@@ -589,7 +593,7 @@ const ERP_NAV_ITEMS: NavItem[] = [
   { label: 'nav.reportes',        icon: <ERPReportesIconERP     fontSize="small" />, path: '/erp/reportes',          section: 'section.analitica' },
   { label: 'nav.configuracion',   icon: <ERPConfigIconERP       fontSize="small" />, path: '/erp/config',            section: 'section.sistema' },
 ]
-const ERP_SECTIONS = ['section.general', 'section.contabilidad', 'section.cuentas', 'section.fiscal', 'section.corporativo', 'section.analitica', 'section.sistema']
+const ERP_SECTIONS = ['section.general', 'section.ingresos', 'section.contabilidad', 'section.cuentas', 'section.fiscal', 'section.corporativo', 'section.analitica', 'section.sistema']
 
 const SCM_NAV_ITEMS: NavItem[] = [
   { label: 'nav.torreScm',        icon: <SCMTorreIconSCM  fontSize="small" />, path: '/scm',                   section: 'section.general',       exact: true },

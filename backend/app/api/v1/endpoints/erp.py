@@ -183,7 +183,9 @@ class LineaFacturaCreate(BaseModel):
     centro_costo_id: Optional[int] = None
 
 class FacturaClienteCreate(BaseModel):
-    numero: str
+    # OBSOLETO: el número sale de la resolución vigente. Se acepta para no romper
+    # a quien lo siga enviando, pero se ignora.
+    numero: Optional[str] = None
     cliente_nombre: str
     cliente_nit: Optional[str] = None
     cliente_email: Optional[str] = None
@@ -926,55 +928,22 @@ async def _asiento(db, *, empresa_id, evento, tipo, fecha, concepto, referencia,
 
 @router.post("/cxc/facturas", response_model=FacturaClienteResponse, status_code=201)
 async def crear_factura_cliente(data: FacturaClienteCreate, db: AsyncSession = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
-    existing = await db.execute(select(ERPFacturaCliente).where(ERPFacturaCliente.numero == data.numero))
-    if existing.scalar_one_or_none():
-        raise HTTPException(409, f"Ya existe factura con número {data.numero}")
-    subtotal = 0.0
-    total_imp = 0.0
-    for l in data.lineas:
-        base = l.cantidad * l.precio_unitario * (1 - l.descuento_pct / 100)
-        imp = 0.0
-        if l.impuesto_id:
-            t = await db.get(ERPTipoImpuesto, l.impuesto_id)
-            if t:
-                imp = base * float(t.porcentaje) / 100
-        subtotal += base
-        total_imp += imp
-    total = subtotal + total_imp
-    if data.fecha_vencimiento is None:
-        data.fecha_vencimiento = data.fecha + timedelta(days=(await _get_config(db)).dias_vencimiento_cxc)
-    fc = ERPFacturaCliente(
-        **{k: v for k, v in data.model_dump(exclude={"lineas"}).items()},
-        subtotal=subtotal, total_impuestos=total_imp, total=total, saldo=total,
-    )
-    fc.empresa_id = await _empresa_de(db, fc.empresa_id)
-    db.add(fc)
-    await db.flush()
-    for ldata in data.lineas:
-        base = ldata.cantidad * ldata.precio_unitario * (1 - ldata.descuento_pct / 100)
-        imp = 0.0
-        if ldata.impuesto_id:
-            t = await db.get(ERPTipoImpuesto, ldata.impuesto_id)
-            if t:
-                imp = base * float(t.porcentaje) / 100
-        linea = ERPLineaFacturaCliente(
-            factura_id=fc.id, **{k: v for k, v in ldata.model_dump().items()},
-            subtotal=base, total_impuesto=imp, total=base + imp,
-        )
-        db.add(linea)
-    await _asiento(
-        db, empresa_id=fc.empresa_id, evento="VENTA_FACTURA",
-        tipo=TipoComprobante.DIARIO, fecha=fc.fecha,
-        concepto=f"Factura de venta {fc.numero} - {fc.cliente_nombre}",
-        referencia=fc.numero, documento_tipo="factura_cliente", documento_id=fc.id,
-        lineas=[("cartera", total, 0, fc.cliente_nombre),
-                ("ingreso", 0, subtotal, fc.cliente_nombre),
-                ("iva_generado", 0, total_imp, fc.cliente_nombre)],
-        usuario=current_user.nombre,
-    )
-    await db.commit()
-    await db.refresh(fc)
-    return fc
+    """Ruta antigua de creación. Delega en el servicio de Ingresos · Factura de
+    venta para que haya una sola forma de emitir: numeración por resolución,
+    CUFE real y el mismo asiento. El `numero` que llegue se ignora."""
+    from app.api.v1.endpoints.erp_ventas import emitir_y_guardar
+    from app.core.erp_ventas import FacturaVentaEntrada, LineaVentaEntrada
+
+    datos = FacturaVentaEntrada(
+        empresa_id=data.empresa_id, tipo_documento="FACTURA_VENTA", fecha=data.fecha,
+        fecha_vencimiento=data.fecha_vencimiento, moneda=data.moneda,
+        centro_costo_id=data.centro_costo_id, proyecto_id=data.proyecto_id,
+        cliente_identificacion=data.cliente_nit, cliente_nombre=data.cliente_nombre,
+        cliente_email=data.cliente_email, concepto=data.concepto,
+        lineas=[LineaVentaEntrada(descripcion=l.descripcion, cantidad=l.cantidad,
+                                  precio_unitario=l.precio_unitario, descuento_pct=l.descuento_pct,
+                                  impuesto_id=l.impuesto_id) for l in data.lineas])
+    return await emitir_y_guardar(db, datos, current_user.nombre)
 
 @router.get("/cxc/aging")
 async def aging_cuentas_cobrar(db: AsyncSession = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
@@ -1156,22 +1125,35 @@ async def listar_pagos(
 
 @router.post("/pagos", response_model=PagoResponse, status_code=201)
 async def registrar_pago(data: PagoCreate, db: AsyncSession = Depends(get_db), current_user: Usuario = Depends(get_current_user)):
+    if data.factura_cliente_id:
+        # El cobro de una factura de venta pasa por la misma validación que el
+        # pago rápido: antes un pago mayor que el saldo dejaba el saldo en cero
+        # pero el asiento por el monto completo.
+        from app.core.erp_ventas import PagoVentaEntrada, registrar_recaudo
+        fc = await db.get(ERPFacturaCliente, data.factura_cliente_id)
+        if fc is None:
+            raise HTTPException(404, "Factura no encontrada")
+        try:
+            pago = await registrar_recaudo(db, fc, PagoVentaEntrada(
+                monto=data.monto, cuenta_bancaria_id=data.cuenta_bancaria_id, fecha=data.fecha,
+                metodo_pago=data.metodo_pago, referencia=data.referencia, numero=data.numero),
+                current_user.nombre)
+            await db.commit()
+        except HTTPException:
+            await db.rollback()
+            raise
+        await db.refresh(pago)
+        return pago
+
     pago = ERPPago(**data.model_dump(), estado=EstadoPago.PROCESADO)
     # La empresa del pago es la de la factura que paga.
-    factura = (await db.get(ERPFacturaCliente, data.factura_cliente_id) if data.factura_cliente_id
-               else await db.get(ERPFacturaProveedor, data.factura_proveedor_id) if data.factura_proveedor_id
-               else None)
+    factura = (await db.get(ERPFacturaProveedor, data.factura_proveedor_id)
+               if data.factura_proveedor_id else None)
     pago.empresa_id = await _empresa_de(db, pago.empresa_id or (factura.empresa_id if factura else None))
     db.add(pago)
     # Se vacía ya: el asiento referencia `pago.id`, y sin esto es None.
     await db.flush()
     # Actualizar saldo factura
-    if data.factura_cliente_id:
-        fc = await db.get(ERPFacturaCliente, data.factura_cliente_id)
-        if fc:
-            nuevo_saldo = max(0, float(fc.saldo) - data.monto)
-            fc.saldo = nuevo_saldo
-            fc.estado = EstadoFactura.PAGADA if nuevo_saldo == 0 else EstadoFactura.PARCIALMENTE_PAGADA
     if data.factura_proveedor_id:
         fp = await db.get(ERPFacturaProveedor, data.factura_proveedor_id)
         if fp:
@@ -1179,16 +1161,7 @@ async def registrar_pago(data: PagoCreate, db: AsyncSession = Depends(get_db), c
             fp.saldo = nuevo_saldo
             fp.estado = EstadoFactura.PAGADA if nuevo_saldo == 0 else EstadoFactura.PARCIALMENTE_PAGADA
     # Asiento automático del pago
-    if data.factura_cliente_id:
-        # Recaudo: Db Bancos / Cr Clientes
-        await _asiento(db, empresa_id=pago.empresa_id, evento="RECAUDO_CLIENTE",
-            tipo=TipoComprobante.INGRESO, fecha=pago.fecha,
-            concepto="Recaudo pago cliente",
-            referencia=getattr(pago, "referencia", None) or "",
-            documento_tipo="pago", documento_id=pago.id,
-            lineas=[("banco", data.monto, 0, None), ("cartera", 0, data.monto, None)],
-            usuario=current_user.nombre)
-    elif data.factura_proveedor_id:
+    if data.factura_proveedor_id:
         # Egreso: Db Proveedores / Cr Bancos
         await _asiento(db, empresa_id=pago.empresa_id, evento="PAGO_PROVEEDOR",
             tipo=TipoComprobante.EGRESO, fecha=pago.fecha,
@@ -1235,7 +1208,7 @@ async def listar_presupuestos(
                 FROM erp_comprobante_lineas l
                 JOIN erp_comprobantes c ON c.id = l.comprobante_id
                 JOIN erp_plan_cuentas pc ON pc.id = l.cuenta_id
-                WHERE c.estado = 'CONTABILIZADO'
+                WHERE c.estado IN ('CONTABILIZADO', 'ANULADO')
                   AND left(pc.codigo, 1) IN ('5', '6')
                   AND extract(year from c.fecha) = ANY(:anios)
                 GROUP BY 1, 2
@@ -1629,13 +1602,13 @@ async def config_numeraciones(db: AsyncSession = Depends(get_db), current_user: 
 # ── REPORTES ──────────────────────────────────────────────────────────────────
 
 async def _sum_lineas(db, anio, *, tipo=None, cod_like=None, signo=1, acumulado=False):
-    """Suma de líneas de comprobantes CONTABILIZADOS (libro mayor).
+    """Suma de líneas de los comprobantes en libros (libro mayor; ver ESTADOS_EN_LIBROS).
     signo +1 => débito-crédito (cuentas de naturaleza débito: activo/gasto);
     signo -1 => crédito-débito (pasivo/patrimonio/ingreso)."""
     expr = (func.sum(ERPComprobanteLinea.debito - ERPComprobanteLinea.credito) if signo > 0
             else func.sum(ERPComprobanteLinea.credito - ERPComprobanteLinea.debito))
     q = select(func.coalesce(expr, 0)).join(ERPComprobante).join(ERPPlanCuenta).where(
-        ERPComprobante.estado == EstadoComprobante.CONTABILIZADO
+        ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS)
     )
     if acumulado:
         q = q.where(func.substr(ERPComprobante.periodo, 1, 4) <= str(anio))

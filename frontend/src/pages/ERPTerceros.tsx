@@ -37,6 +37,7 @@ interface Tercero {
   nombre_comercial?: string | null
   es_persona_natural: boolean
   es_cliente: boolean; es_proveedor: boolean; es_empleado: boolean; es_socio: boolean
+  es_vendedor?: boolean
   ciudad?: string | null
   codigo_municipio?: string | null
   telefono?: string | null
@@ -77,6 +78,7 @@ const PAPELES: Array<[keyof Tercero, string]> = [
   ['es_proveedor', 'Proveedor'],
   ['es_empleado', 'Empleado'],
   ['es_socio', 'Socio'],
+  ['es_vendedor', 'Vendedor'],
 ]
 
 const VACIO = {
@@ -85,7 +87,7 @@ const VACIO = {
   razon_social: '',
   nombre_comercial: '',
   es_persona_natural: false,
-  es_cliente: true, es_proveedor: false, es_empleado: false, es_socio: false,
+  es_cliente: true, es_proveedor: false, es_empleado: false, es_socio: false, es_vendedor: false,
   direccion: '', ciudad: '', codigo_municipio: '', departamento: '',
   telefono: '', email: '',
   responsabilidades: [] as string[],

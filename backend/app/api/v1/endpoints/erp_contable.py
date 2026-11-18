@@ -76,6 +76,7 @@ class TerceroEntrada(BaseModel):
     es_proveedor: bool = False
     es_empleado: bool = False
     es_socio: bool = False
+    es_vendedor: bool = False
 
     direccion: Optional[str] = None
     ciudad: Optional[str] = None
@@ -115,6 +116,7 @@ class TerceroResponse(BaseModel):
     es_proveedor: bool
     es_empleado: bool
     es_socio: bool
+    es_vendedor: bool = False
     direccion: Optional[str] = None
     ciudad: Optional[str] = None
     codigo_municipio: Optional[str] = None
@@ -140,7 +142,7 @@ class TerceroResponse(BaseModel):
 async def listar_terceros(
     empresa_id: Optional[int] = None,
     buscar: Optional[str] = None,
-    tipo: Optional[str] = Query(None, description="cliente, proveedor, empleado"),
+    tipo: Optional[str] = Query(None, description="cliente, proveedor, empleado, vendedor"),
     limite: int = Query(200, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     usuario: Usuario = Depends(erp_permisos.ver_terceros),
@@ -157,7 +159,8 @@ async def listar_terceros(
     if tipo:
         campo = {"cliente": ERPTercero.es_cliente,
                  "proveedor": ERPTercero.es_proveedor,
-                 "empleado": ERPTercero.es_empleado}.get(tipo.lower())
+                 "empleado": ERPTercero.es_empleado,
+                 "vendedor": ERPTercero.es_vendedor}.get(tipo.lower())
         if campo is not None:
             consulta = consulta.where(campo.is_(True))
 
@@ -281,7 +284,7 @@ async def listar_periodos(
                func.coalesce(func.sum(ERPComprobante.total_debito), 0),
                func.coalesce(func.sum(ERPComprobante.total_credito), 0))
         .where(ERPComprobante.empresa_id == empresa_id,
-               ERPComprobante.estado == EstadoComprobante.CONTABILIZADO)
+               ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS))
         .group_by(ERPComprobante.periodo))
     movimiento = {p: (c, float(d), float(cr)) for p, c, d, cr in r.all()}
 
@@ -674,7 +677,7 @@ async def _saldos(db: AsyncSession, empresa_id: int, hasta: date,
     """Débitos y créditos por cuenta en un rango, de una sola consulta."""
     condiciones = [
         ERPComprobante.empresa_id == empresa_id,
-        ERPComprobante.estado == EstadoComprobante.CONTABILIZADO,
+        ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS),
         ERPComprobante.fecha <= hasta,
     ]
     if desde:
@@ -801,7 +804,7 @@ async def libro_mayor(
 
     filtro = [ERPComprobanteLinea.cuenta_id == cuenta_id,
               ERPComprobante.empresa_id == empresa_id,
-              ERPComprobante.estado == EstadoComprobante.CONTABILIZADO,
+              ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS),
               ERPComprobante.fecha >= desde, ERPComprobante.fecha <= hasta]
 
     total = (await db.execute(
@@ -879,7 +882,7 @@ async def libro_diario(
     comps = list((await db.execute(select(ERPComprobante).where(
         ERPComprobante.empresa_id == empresa_id,
         ERPComprobante.fecha >= desde, ERPComprobante.fecha <= hasta,
-        ERPComprobante.estado == EstadoComprobante.CONTABILIZADO
+        ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS)
     ).order_by(ERPComprobante.fecha, ERPComprobante.id).limit(limite))).scalars().all())
 
     # Cuántos hay en realidad. Cortar en 500 sin decirlo hace creer que el mes
@@ -887,7 +890,7 @@ async def libro_diario(
     total = (await db.execute(select(func.count()).select_from(ERPComprobante).where(
         ERPComprobante.empresa_id == empresa_id,
         ERPComprobante.fecha >= desde, ERPComprobante.fecha <= hasta,
-        ERPComprobante.estado == EstadoComprobante.CONTABILIZADO))).scalar() or 0
+        ERPComprobante.estado.in_(erp_motor.ESTADOS_EN_LIBROS)))).scalar() or 0
 
     if not comps:
         return {"desde": desde, "hasta": hasta, "comprobantes": [],

@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import io
 import re
+import time
 import unicodedata
 from collections import Counter
 from datetime import date, datetime, timedelta
@@ -414,6 +415,7 @@ class DisposicionLiteIn(BaseModel):
 
 
 async def sincronizar_disposicion(db: AsyncSession, did: int, quien: str) -> None:
+    from app.api.v1.endpoints.eam import _referencia_profundidad, _validar_profundidad
     from app.api.v1.endpoints.eam_neumaticos_disposicion import DisposicionIn, registrar
     d = await db.get(LiteDisposicion, did)
     if d.sync_estado == "SINCRONIZADA":
@@ -422,6 +424,25 @@ async def sincronizar_disposicion(db: AsyncSession, did: int, quien: str) -> Non
     neu_id = neu.id if neu else None
     if neu is None:
         d.sync_estado, d.sync_motivo = "SIN_SEGUIMIENTO", "La llanta no existe en TittanWare"
+        await db.commit()
+        return
+    # Una disposición de Lite solo entra si la llanta ya salió del vehículo en
+    # TittanWare. Darla de baja desde aquí la bajaría del vehículo sin lectura
+    # de odómetro y cerraría su vida con un recorrido que nadie midió.
+    if neu.estado == "INSTALADO":
+        act = await db.get(EAMActivo, neu.activo_id) if neu.activo_id else None
+        donde = f"{(act.placa or act.codigo) if act else '?'} posición {neu.posicion or '?'}"
+        d.sync_estado = "RECHAZADA"
+        d.sync_motivo = (f"En TittanWare la llanta sigue montada en {donde}; registre allá el desmontaje "
+                         "para sincronizar")
+        await db.commit()
+        return
+    # El labrado no crece: misma regla, surco por surco, que en las inspecciones
+    # (izquierda = hombro externo, derecha = interno).
+    err_prof = _validar_profundidad(await _referencia_profundidad(db, neu), d.profundidad_externa,
+                                    d.profundidad_central, d.profundidad_interna, neu.codigo)
+    if err_prof:
+        d.sync_estado, d.sync_motivo = "RECHAZADA", err_prof[:400]
         await db.commit()
         return
     try:
@@ -492,6 +513,79 @@ async def resincronizar_disposicion(did: int, db: AsyncSession = Depends(get_db)
         await db.commit()
         await sincronizar_disposicion(db, did, quien)
     return _ficha_disp(await db.get(LiteDisposicion, did), [])
+
+
+# Estados que vale la pena volver a intentar: lo que nunca se intentó, lo que
+# TittanWare rechazó (pudo corregirse allá) y lo que no existía (pudo crearse).
+_REINTENTABLES = ["PENDIENTE", "RECHAZADA", "SIN_SEGUIMIENTO"]
+_TOPE_SEGUNDOS = 25.0
+
+
+@router.post("/sincronizar-pendientes")
+async def sincronizar_pendientes(corte: Optional[datetime] = None, desde_disposicion: int = 0,
+                                 db: AsyncSession = Depends(get_db), usuario: Usuario = Depends(get_current_user)):
+    """Reintenta de una vez todo lo que no está en TittanWare.
+
+    Va en orden de fecha —TittanWare no acepta una inspección anterior a la
+    última de la llanta— y las inspecciones antes que las disposiciones, porque
+    la baja cierra la llanta. Trabaja por tandas de pocos segundos: mientras
+    `faltan` no sea cero se vuelve a llamar con el `corte` y el
+    `desde_disposicion` que devolvió, y así cada registro se intenta una sola
+    vez por pasada (lo que se rechaza no vuelve a entrar en la misma).
+    """
+    quien = _quien(usuario)
+    inicio = time.monotonic()
+    corte = (corte or datetime.utcnow()).replace(tzinfo=None)
+    cuenta = {"inspecciones": Counter(), "disposiciones": Counter()}
+    con_pendientes = LiteInspeccion.id.in_(
+        select(LiteInspeccionLlanta.inspeccion_id).where(LiteInspeccionLlanta.sync_estado.in_(_REINTENTABLES)))
+    sin_intentar = or_(LiteInspeccion.sincronizada_en.is_(None), LiteInspeccion.sincronizada_en < corte)
+
+    insps = [i for (i,) in (await db.execute(
+        select(LiteInspeccion.id).where(con_pendientes, sin_intentar)
+        .order_by(LiteInspeccion.fecha, LiteInspeccion.id).limit(500))).all()]
+    a_tiempo = True
+    for iid in insps:
+        if time.monotonic() - inicio > _TOPE_SEGUNDOS:
+            a_tiempo = False
+            break
+        lineas = (await db.execute(select(LiteInspeccionLlanta).where(
+            LiteInspeccionLlanta.inspeccion_id == iid,
+            LiteInspeccionLlanta.sync_estado.in_(_REINTENTABLES)))).scalars().all()
+        lids = [ln.id for ln in lineas]
+        for ln in lineas:
+            ln.sync_estado = "PENDIENTE"
+        await db.commit()
+        await sincronizar_inspeccion(db, iid, quien)
+        for (estado,) in (await db.execute(select(LiteInspeccionLlanta.sync_estado)
+                                           .where(LiteInspeccionLlanta.id.in_(lids)))).all():
+            cuenta["inspecciones"][estado] += 1
+    faltan = (await db.execute(select(func.count()).select_from(LiteInspeccion)
+                               .where(con_pendientes, sin_intentar))).scalar() or 0
+
+    por_hacer = LiteDisposicion.sync_estado.in_(_REINTENTABLES)
+    if a_tiempo and not faltan:
+        for did in [i for (i,) in (await db.execute(
+                select(LiteDisposicion.id).where(por_hacer, LiteDisposicion.id > desde_disposicion)
+                .order_by(LiteDisposicion.id).limit(2000))).all()]:
+            if time.monotonic() - inicio > _TOPE_SEGUNDOS:
+                break
+            d = await db.get(LiteDisposicion, did)
+            d.sync_estado = "PENDIENTE"
+            await db.commit()
+            await sincronizar_disposicion(db, did, quien)
+            d = await db.get(LiteDisposicion, did)
+            await db.refresh(d)
+            cuenta["disposiciones"][d.sync_estado] += 1
+            desde_disposicion = did
+    faltan += (await db.execute(select(func.count()).select_from(LiteDisposicion)
+                                .where(por_hacer, LiteDisposicion.id > desde_disposicion))).scalar() or 0
+
+    def resumen(c: Counter) -> Dict[str, int]:
+        return {"revisadas": sum(c.values()), "sincronizadas": c.get("SINCRONIZADA", 0),
+                "rechazadas": c.get("RECHAZADA", 0), "sin_seguimiento": c.get("SIN_SEGUIMIENTO", 0)}
+    return {"inspecciones": resumen(cuenta["inspecciones"]), "disposiciones": resumen(cuenta["disposiciones"]),
+            "faltan": faltan, "corte": corte.isoformat(), "desde_disposicion": desde_disposicion}
 
 
 @router.get("/disposiciones")

@@ -24,6 +24,10 @@ RUTAS = (
     # El núcleo contable cuelga del mismo prefijo /erp: desde fuera es el mismo módulo.
     ("erp_contable", "router", "erp"),
     ("erp_gestion", "router", "erp"),
+    # Ingresos · Factura de venta (/erp/ingresos/facturas).
+    ("erp_ventas", "router", "erp"),
+    # Ingresos · Pagos recibidos (/erp/ingresos/pagos-recibidos).
+    ("erp_recibos", "router", "erp"),
     ("auth", "router", None),
     ("movil", "router", "eam"),
     # Consola del operador: administra OTRAS empresas, no la propia.
@@ -95,6 +99,8 @@ RUTAS = (
     # Tareas dirigidas: frentes de picking, reabastecimiento y asignación.
     ("wms_operacion_tareas", "router", "wms"),
     ("wms_portal", "router", "wms"),
+    # Facturación del servicio logístico a cada depositante (/wms/3pl).
+    ("wms_3pl", "router", "wms"),
     ("hcm", "router", "gh"),
     ("tms", "router", "tms"),
     ("dms", "router", "dms"),

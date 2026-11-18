@@ -95,6 +95,11 @@ ver_contabilidad = exigir("fin_contabilidad", "fin_reportes")
 crear_comprobantes = exigir("fin_comprobantes")
 contabilizar = exigir("fin_contabilizar")
 anular = exigir("fin_anular")
+castigar = exigir("fin_castigar")
+# Ver impuestos vale con contabilidad; cambiarlos en un documento, no.
+editar_impuestos = exigir("fin_impuestos")
+# La IA la paga la plataforma: se habilita por perfil, como TittanBot.
+usar_asistente = exigir("asistente")
 ver_cartera = exigir("fin_cartera", "fin_contabilidad")
 registrar_pagos = exigir("fin_pagos")
 ver_tesoreria = exigir("fin_tesoreria")

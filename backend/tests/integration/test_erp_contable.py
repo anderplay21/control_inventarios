@@ -562,6 +562,23 @@ async def test_balance_de_comprobacion_cuadra(db, empresa):
     assert total[0] > 0
 
 
+@pytest.mark.asyncio(loop_scope="session")
+async def test_anular_deja_los_saldos_como_estaban(db, empresa):
+    """El original anulado y su reversión se cancelan en los reportes.
+
+    Antes los reportes contaban solo CONTABILIZADO: tomaban la reversión sin el
+    original y la anulación quedaba sumada dos veces.
+    """
+    from app.api.v1.endpoints.erp_contable import _saldos
+    hasta = max(FECHA, date.today()) + timedelta(days=1)
+    neto = lambda s: {c: v["debito"] - v["credito"] for c, v in s.items() if v["debito"] - v["credito"]}
+    antes = neto(await _saldos(db, empresa.id, hasta))
+    comp = await _venta(db, empresa, neto="300000", iva="57000")
+    await erp_motor.reversar(db, comp.id, "prueba", "Anulada por el cliente")
+    await db.flush()
+    assert neto(await _saldos(db, empresa.id, hasta)) == antes
+
+
 # ─── La siembra ───────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio(loop_scope="session")
